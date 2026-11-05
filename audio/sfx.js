@@ -64,6 +64,8 @@
     const AC = global.AudioContext || global.webkitAudioContext;
     if (!AC || Sfx._ctx) return Sfx;
     if (global.location && global.location.protocol === 'file:') return Sfx;     // Chrome cannot fetch() file:// - the dev benches / tools opened from disk stay silent (no console noise)
+    // [mobile] iOS / WebKit: a 'playback' audio session, so the ring / silent switch does not mute the game (Safari 17+, app WebViews)
+    try { if (global.navigator && global.navigator.audioSession) global.navigator.audioSession.type = 'playback'; } catch (e) { /* older WebKit */ }
     try {
       const ctx = Sfx._ctx = new AC();
       const master = Sfx._master = ctx.createGain();
@@ -71,7 +73,9 @@
       Sfx.volume = isFinite(v) ? v : 1; master.gain.value = Sfx.volume;
       const an = Sfx._an = ctx.createAnalyser(); an.fftSize = 512;            // (tests read the output level)
       master.connect(an); master.connect(ctx.destination);
-      const unlock = () => { if (ctx.state === 'suspended') ctx.resume().catch(() => {}); };
+      // a gesture also retries the clip load once if it found nothing at startup (app WebViews can refuse requests that early)
+      let retried = false;
+      const unlock = () => { if (ctx.state === 'suspended') ctx.resume().catch(() => {}); if (!retried && Sfx.ready === false && !Object.keys(Sfx._bufs).length) { retried = true; Sfx._load(); } };
       // [mobile] iOS only lets touchend / click start audio, and the touch layer (mobile.js) stops world pointerdowns in the capture
       // phase: listen in the capture phase too, on every gesture kind
       for (const ev of ['pointerdown', 'keydown', 'touchstart', 'touchend', 'click']) global.addEventListener(ev, unlock, { passive: true, capture: true });
@@ -91,7 +95,8 @@
     const done = () => { if (--left === 0) Sfx.ready = Object.keys(Sfx._bufs).length > 0; };
     for (const n of names) {
       // no file:// fetch (Chrome blocks it) and no 404 noise: a failed clip is simply a silent clip
-      fetch(base + n + '.wav').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(0)))
+      // [mobile] the app's bundled files: the WebView's own fetch (CapacitorWebFetch when a native HTTP patch is installed)
+      (global.CapacitorWebFetch || global.fetch)(base + n + '.wav').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(0)))
         .then((ab) => new Promise((res, rej) => Sfx._ctx.decodeAudioData(ab, res, rej)))
         .then((buf) => { Sfx._bufs[n] = buf; }).catch(() => {}).then(done);
     }
