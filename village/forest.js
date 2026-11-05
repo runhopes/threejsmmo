@@ -517,6 +517,7 @@
       const ry = R() * TAU, cs = Math.cos(ry), sn = Math.sin(ry);
       // instance rotation is about +y: local (lx, lz) -> world (lx*cos + lz*sin, -lx*sin + lz*cos)
       const W = (lx, lz) => [x + (lx * cs + lz * sn) * sc, z + (-lx * sn + lz * cs) * sc];
+      if (inside) { let reach = info.r0 * 1.75; if (info.lobes && info.lobes.length) reach = Math.max(reach, info.r0 * 2.35 + 0.75); for (const rt of info.roots || []) reach = Math.max(reach, Math.hypot(rt.x, rt.z) + rt.r); if (terrain.roadDist(x, z) < reach * sc + 1.2) return; }   // roads stay clean: no trunk, lobe or root in a road corridor
       F.addGiant(I, kind, x, inside ? 0 : terrain.height(x, z) - 0.2, z, ry, sc, tints[Math.floor(R() * tints.length)]);
       placed.push({ x, z, kind, sc, info });
       if (inside) {

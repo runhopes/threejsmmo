@@ -19,7 +19,7 @@
   W.terrainFor = function (cfg, outsideRoads) {
     W.build();
     W.buildRoadGrid(outsideRoads);
-    W.computeBridges(); W.scatterCamps();                     // random open-field groups (needs the road grid + bridges)
+    W.computeBridges(); W.nudgeCampsOffRoads(); W.scatterCamps();                     // random open-field groups (needs the road grid + bridges)
     const wt = cfg.wallThick, H = cfg.half;
     const walk = { minX: -(H + wt + cfg.outer), maxX: H + wt + cfg.outer, minZ: -(H + wt + cfg.outer), maxZ: H + wt + cfg.south };
     return { walk, height: W.heightAt, roadDist: W.roadDist };
@@ -33,9 +33,15 @@
     W.roadLines = [];
     for (const r of W.roads) W.roadLines.push({ id: r.id, w: r.w, kind: r.kind, line: W.spline(r.pts, 4) });
     for (const pts of extra || []) W.roadLines.push({ id: 'village', w: 4.4, kind: 'dirt', line: pts.map((p) => [p[0], p[1]]) });
+    /* a road is only painted / counted where the ground is walkable: segments deep inside the rock massifs (sd > 9; rivers are < ~7) are skipped.
+       (the 'east' road used to be painted 330 m up a 30 m mountain; bridges come from W.roads, not from these lines) */
+    let clipped = 0;
+    for (const R of W.roadLines) { if (R.id === 'village') continue; R.off = new Uint8Array(R.line.length); for (let s = 0; s < R.line.length - 1; s++) { const a = R.line[s], b = R.line[s + 1]; if (W.sdAt(a[0], a[1]) > 9 && W.sdAt(b[0], b[1]) > 9) { R.off[s] = 1; clipped++; } } }
+    W.roadClipped = clipped;
     const reach = 40;
     for (const R of W.roadLines) {
       for (let s = 0; s < R.line.length - 1; s++) {
+        if (R.off && R.off[s]) continue;
         const a = R.line[s], b = R.line[s + 1];
         const i0 = Math.max(0, Math.floor((Math.min(a[0], b[0]) - reach - B.minX) / G)), i1 = Math.min(NX - 1, Math.ceil((Math.max(a[0], b[0]) + reach - B.minX) / G));
         const j0 = Math.max(0, Math.floor((Math.min(a[1], b[1]) - reach - B.minZ) / G)), j1 = Math.min(NZ - 1, Math.ceil((Math.max(a[1], b[1]) + reach - B.minZ) / G));
@@ -80,6 +86,7 @@
     for (const R of W.roadLines) {
       const half = R.w / 2, reach = half + 3.5, foot = R.kind === 'path' ? 0.8 : 1.0;
       for (let s = 0; s < R.line.length - 1; s++) {
+        if (R.off && R.off[s]) continue;
         const a = R.line[s], b = R.line[s + 1];
         const i0 = Math.max(0, Math.floor((Math.min(a[0], b[0]) - reach - B.minX) / G)), i1 = Math.min(NX - 1, Math.ceil((Math.max(a[0], b[0]) + reach - B.minX) / G));
         const j0 = Math.max(0, Math.floor((Math.min(a[1], b[1]) - reach - B.minZ) / G)), j1 = Math.min(NZ - 1, Math.ceil((Math.max(a[1], b[1]) + reach - B.minZ) / G));

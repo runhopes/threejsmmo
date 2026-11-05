@@ -196,9 +196,12 @@
     // west road: plaza -> west bank forest -> north-west bridge -> north plains
     { id: 'west', w: 4.4, kind: 'dirt', pts: pts([[145, 384], [118, 388], [96, 385], [80, 362], [76, 322], [76, 282], [76, 254], [76, 232], [72, 205], [62, 180], [58, 150], [70, 112], [96, 80]]) },
     // south-west branch: west bank -> shadow forest
-    { id: 'wsouth', w: 4.4, kind: 'dirt', pts: pts([[96, 386], [90, 430], [85, 480], [84, 520], [92, 560], [108, 595]]) },
+    // (threads the lane between the farm's two crop fields, and keeps 12 m off the Ancient Tree: the old line ran through the farmhouse and the titan's roots)
+    { id: 'wsouth', w: 4.4, kind: 'dirt', pts: [[-162, 192], [-172, 214], [-173, 240], [-173, 290], [-178, 314]].concat(pts([[90, 430], [85, 480]])).concat([[-188, 545], [-184, 600], [-182, 650]]).concat(pts([[92, 560], [108, 595]])) },
     // east road: plaza -> south bridge -> marsh coast -> north along the coast to the fortland
-    { id: 'east', w: 4.4, kind: 'dirt', pts: pts([[155, 382], [190, 380], [214, 386], [250, 372], [300, 358], [335, 346], [350, 310], [350, 260], [346, 210], [340, 160], [336, 110]]) },
+    { id: 'east', w: 4.4, kind: 'dirt', pts: [[15, 180], [56, 176], [100, 168], [138, 152], [160, 128], [176, 96], [186, 62], [178, 38], [174, 14], [180, -6]] },
+    // marsh coast road: south bridge -> marsh coast -> north along the coast to the fortland (the old 'east' road's far half; its link to the castle is ebridge)
+    { id: 'eastcoast', w: 4.4, kind: 'dirt', pts: pts([[350, 304], [350, 260], [346, 210], [340, 160], [336, 110]]) },
     // north road: plaza -> round the castle -> north bridge -> north plains hub -> pinewood
     { id: 'north', w: 4.4, kind: 'dirt', pts: pts([[158, 378], [180, 362], [202, 336], [208, 300], [198, 266], [190, 252], [188, 226], [184, 190], [182, 150], [178, 110], [182, 66]]) },
     // east bridge road: warren -> east bridge -> marsh
@@ -417,9 +420,45 @@
   W.lakeSd = lakeSd;
 
   const NZ0 = 1;
+  /* rock mounds (islands) and creature camps that sit on a road: slide them off it (before the floor / camp dressing is built).
+     A road must stay walkable and clean: islands need r + half road + 5 m of clearance (nav radius), dressed camps (tents, fire, burrows) 6 m. */
+  W.nudgeIslandsOffRoads = function () {
+    const lines = W.roads.filter((r) => r.id !== 'plaza').map((r) => ({ hw: r.w / 2, line: W.spline(r.pts, 3) }));
+    W.nudgedIslands = [];
+    // ponds / swamp pools slide off roads too (the sea and the big lake stay): radius = longest axis + the 3.2 m wet margin
+    const bodies = W.islands.map((I) => ({ I, r: I.r })).concat(W.lakes.filter((L) => L.kind !== 'lake').map((L) => ({ I: L, r: Math.max(L.rx, L.rz) + 3.5 })));
+    for (const { I, r } of bodies) {
+      let moved = 0;
+      for (let it = 0; it < 10; it++) {
+        let best = 1e9, bx = 0, bz = 0, hw = 0;
+        for (const R of lines) for (const [x, z] of R.line) { const d = Math.hypot(x - I.x, z - I.z); if (d < best) { best = d; bx = x; bz = z; hw = R.hw; } }
+        const need = r + hw + 5; if (best >= need) break;
+        const dx = I.x - bx, dz = I.z - bz, L = Math.hypot(dx, dz) || 1, k = need - best + 1;
+        I.x += dx / L * k; I.z += dz / L * k; moved += k;
+      }
+      if (moved > 0.5) W.nudgedIslands.push(Math.round(I.x) + ',' + Math.round(I.z) + ' ' + moved.toFixed(0) + 'm');
+    }
+  };
+  W.nudgeCampsOffRoads = function () {
+    const g = { x: 0, z: 0 }; W.nudgedCamps = [];
+    for (const c of W.camps) {
+      if (!(c.species.startsWith('goblin') || c.species.startsWith('rabbit')) || c.id.indexOf('boss') >= 0 || c.id === 'rab_king') continue;
+      let moved = 0;
+      for (let it = 0; it < 24; it++) {
+        const d = W.roadDist(c.cx, c.cz); if (d > 6) break;
+        const e = 1.5, gx = W.roadDist(c.cx + e, c.cz) - W.roadDist(c.cx - e, c.cz), gz = W.roadDist(c.cx, c.cz + e) - W.roadDist(c.cx, c.cz - e), L = Math.hypot(gx, gz) || 1;
+        const nx = c.cx + gx / L * 1.5, nz = c.cz + gz / L * 1.5;
+        if (W.sdAt(nx, nz) > -(c.r * 0.75 + 3)) break;                  // do not push a camp out of the valley floor
+        c.cx = nx; c.cz = nz; moved += 1.5;
+      }
+      if (moved > 0.5) W.nudgedCamps.push(c.id + ' ' + moved.toFixed(0) + 'm');
+    }
+  };
+
   W.build = function () {
     if (W.sd) return W;
     const t0 = performance.now();
+    W.nudgeIslandsOffRoads();
     const N = NX * NZ;
     const sd = new Float32Array(N), hgrid = new Float32Array(N), riverD = new Float32Array(N).fill(1e5), wet = new Float32Array(N), lakeD = new Float32Array(N).fill(1e5);
     W.sd = sd; W.hgrid = hgrid; W.riverD = riverD; W.wet = wet; W.lakeD = lakeD;
@@ -445,6 +484,23 @@
         const bd = ex > 0 && ez > 0 ? Math.hypot(ex, ez) : Math.max(ex, ez);
         if (bd < d) d = bd;
         sd[j * NX + i] = d;
+      }
+    }
+    /* --- ROAD CORRIDORS: a road must stay walkable end to end. Where its centre line sits closer than 5 m to the floor edge (or just outside it,
+       < 16 m: a thin rock rim / the warped edge), union a corridor into the floor. Deep mountain (sd >= 16) is NOT dug through: re-route such a road
+       instead. Applied before islands / lakes / rivers, which still cut the floor afterwards (a bridge stamps its own deck). --- */
+    W.corridorCells = 0;
+    for (const r of W.roads) {
+      if (r.id === 'plaza' || r.id === 'gate') continue;
+      const Rc = r.w / 2 + 5.5, line = W.spline(r.pts, 3);
+      for (const [px, pz] of line) {
+        const s0 = W.sdAt(px, pz); if (s0 < -5 || s0 > 16) continue;
+        const i0 = Math.max(0, Math.floor((px - Rc - B.minX) / G)), i1 = Math.min(NX - 1, Math.ceil((px + Rc - B.minX) / G));
+        const j0 = Math.max(0, Math.floor((pz - Rc - B.minZ) / G)), j1 = Math.min(NZ - 1, Math.ceil((pz + Rc - B.minZ) / G));
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+          const d = Math.hypot(B.minX + i * G - px, B.minZ + j * G - pz) - Rc, k = j * NX + i;
+          if (d < sd[k]) { if (sd[k] >= 0 && d < 0) W.corridorCells++; sd[k] = d; }
+        }
       }
     }
     // islands (non-walkable hills) + lakes cut out of the floor

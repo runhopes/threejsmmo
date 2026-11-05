@@ -116,6 +116,26 @@
     return nav;
   };
 
+  /* Random open-field packs (rnd_*) that landed in a pocket the hero cannot walk to (fenced by trees / rock / river) are dropped:
+     flood the wilderness grid from the great plaza, keep a camp when any of 9 probe points around it is reachable. Authored camps stay (they are audited by tools/worldplay.mjs). */
+  W.pruneUnreachableCamps = function (bNav) {
+    const w = bNav.w, h = bNav.h, seen = new Uint8Array(w * h), q = new Int32Array(w * h);
+    let hd = 0, tl = 0; const s0 = bNav.nearestFree(bNav.cellOf(0, 150), 12); if (s0 < 0) return;
+    q[tl++] = s0; seen[s0] = 1;
+    while (hd < tl) {
+      const k = q[hd++], i = k % w, j = (k - i) / w;
+      if (i + 1 < w) { const nk = k + 1; if (!seen[nk] && !bNav.block[nk]) { seen[nk] = 1; q[tl++] = nk; } }
+      if (i > 0) { const nk = k - 1; if (!seen[nk] && !bNav.block[nk]) { seen[nk] = 1; q[tl++] = nk; } }
+      if (j + 1 < h) { const nk = k + w; if (!seen[nk] && !bNav.block[nk]) { seen[nk] = 1; q[tl++] = nk; } }
+      if (j > 0) { const nk = k - w; if (!seen[nk] && !bNav.block[nk]) { seen[nk] = 1; q[tl++] = nk; } }
+    }
+    const reach = (x, z) => { const k = bNav.cellOf(x, z); return k >= 0 && seen[k] === 1; };
+    const ok = (c) => { if (reach(c.cx, c.cz)) return true; for (let a = 0; a < 8; a++) if (reach(c.cx + Math.cos(a * 0.785) * 3, c.cz + Math.sin(a * 0.785) * 3)) return true; return false; };
+    const drop = [];
+    W.camps = W.camps.filter((c) => { if (c.id.startsWith('rnd_') && !ok(c)) { drop.push(c.id); return false; } return true; });
+    W.prunedCamps = drop;
+  };
+
   /* ------------------------------------------------ composite navigation ------------------------------------------------ */
   W.compositeNav = function (vNav, bNav, walk) {
     const inV = (x, z) => x > walk.minX + 1 && x < walk.maxX - 1 && z > walk.minZ + 1 && z < walk.maxZ - 1;

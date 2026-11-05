@@ -50,7 +50,7 @@
     const southOut = road([[0, H + 230], [0, crossZ], [0, gateZ + 6]], 6, 'cobble');
     road([[0, gateZ + 6], [0, gateZ - 6], [0, plazaA - 1]], 6, 'cobble');
     road([[0, -plazaA + 1], [0, courtFront + 1.5]], 6, 'cobble');
-    const swOut = road([[0, crossZ], [-30, crossZ + 16], [-72, crossZ + 46], [-125, crossZ + 92], [-190, crossZ + 150]], 4.4, 'dirt');
+    const swOut = road([[0, crossZ], [-30, crossZ + 16], [-72, crossZ + 46], [-125, crossZ + 92]], 4.4, 'dirt');   // world: ends in the farm yard (it used to run on into the carrot field at (-190, 268))
     const seOut = road([[0, crossZ], [32, crossZ + 13], [68, crossZ + 33], [115, crossZ + 72], [175, crossZ + 125]], 4.4, 'dirt');
     road([[plazaA - 1, 0], S(36, 0), S(52, -1), S(66, -12), [H - 3, -16 * s]], 5, 'cobble');            // east road: market -> east watchtower
     road([[-plazaA + 1, 0], S(-30, 1), S(-47, 1.5), S(-66, 7), [-H + 3, 10 * s]], 5, 'cobble');       // west road: residential -> west watchtower
@@ -583,7 +583,7 @@
         crateStack(cx4 + 5.2, cz4 - 3.2, 0.7, 3); barrelCluster(cx4 - 4.5, cz4 - 4.5, 2, 0.3);
       }
       rocksAt(-82, 104, 9, 9, true);                       // wolf steppe: weathered boulders
-      {   // spikeback den: boulder mouth
+      if (!WORLD) {   // spikeback den: boulder mouth (legacy village hunting ground; in the open world the den is the boss_spike camp and this cluttered the gate exit)
         const [dx2, dz2] = [-9, 138];
         rocksAt(dx2 - 4, dz2 + 1, 6, 3, true); rocksAt(dx2 + 4, dz2 + 2, 5, 3, true);
         SP.circle('dirt', dx2, dz2, 5, { blur: 1.5 }); SP.circle('ao', dx2, dz2 + 2, 3, { blur: 1.5, dark: 0.5 });
@@ -864,7 +864,9 @@
     const tn = performance.now();
     const navB = { minX: walk.minX, maxX: walk.maxX, minZ: walk.minZ, maxZ: walk.maxZ };
     const vnav = new V.NavGrid(col, navB, cfg.navCell, cfg.playerRadius + 0.05, (x, z) => x > walk.minX + 0.5 && x < walk.maxX - 0.5 && z > walk.minZ + 0.5 && z < walk.maxZ - 0.5);
-    const nav = WORLD ? WORLD.compositeNav(vnav, WORLD.makeNav(col, cfg.playerRadius + 0.05), walk) : vnav;
+    const wildNav = WORLD ? WORLD.makeNav(col, cfg.playerRadius + 0.05) : null;
+    const nav = WORLD ? WORLD.compositeNav(vnav, wildNav, walk) : vnav;
+    if (WORLD && WORLD.pruneUnreachableCamps) WORLD.pruneUnreachableCamps(wildNav);     // world: drop random mob packs fenced into unreachable pockets
     const navMs = performance.now() - tn;
 
     /* ------------------------------------------ lighting + sky ------------------------------------------ */

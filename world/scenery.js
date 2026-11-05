@@ -206,8 +206,13 @@
     const tintTree = [0xffffff, 0xf2fff4, 0xe8f6ff, 0xfff6e0, 0xeae6ff, 0xffffff];
 
     const solid = (x, z, r, top, tag) => col.circle(x, z, r, top === undefined ? 6 : top, tag || 'tree');
+    /* ROAD CLEARANCE (user rule): nothing solid in a road corridor. roadD = distance to the road EDGE, so a collider of reach r needs roadD > r + ROAD_GAP.
+       A giant's reach = trunk core, buttress lobes and surface roots (they used to poke 1-3 m into the road: placement only checked the centre). */
+    const ROAD_GAP = 1.2;
+    const giantReach = (info, sc) => { let m = info.r0 * 1.75; if (info.lobes && info.lobes.length) m = Math.max(m, info.r0 * 2.35 + 0.75); for (const rt of info.roots || []) m = Math.max(m, Math.hypot(rt.x, rt.z) + rt.r); return m * sc; };
     const plantGiant = (x, z, kind, sc, onFloor) => {
       const info = fi(kind); if (!info) return;
+      if (onFloor && roadD(x, z) < giantReach(info, sc) + ROAD_GAP) return;
       const ry = R() * TAU, cs = Math.cos(ry), sn = Math.sin(ry);
       FOREST.addGiant(Iraw, kind, x, yAt(x, z) - (onFloor ? 0.1 + Math.min(1.4, 4 * slopeAt(x, z)) : 0.2), z, ry, sc, tintTree[Math.floor(R() * tintTree.length)]);
       placed.add(x, z, info.r0 * 1.9 * sc + 1.0);
@@ -260,11 +265,11 @@
       if (tall && bi.dead && pick(bi.dead * cl)) { if (placed.free(jx, jz, 3)) { I.add('deadtree', jx, 0, jz, R() * TAU, 0.8 + R() * 0.6, 0xffffff); solid(jx, jz, 0.4, 5); placed.add(jx, jz, 2.5); stats.trees++; } continue; }
       if (tall && bi.spire && pick(bi.spire * cl)) {
         const sc = 1.2 + R() * 2.2, tint = ROCK_TINT[zn.biome] || ROCK_TINT.default;
-        if (placed.free(jx, jz, sc * 1.8)) { I.add('spire', jx, -0.2, jz, R() * TAU, sc, tint[Math.floor(R() * tint.length)]); solid(jx, jz, sc * 1.35, 40, 'rock'); placed.add(jx, jz, sc * 1.8); stats.rocks++; }
+        if (placed.free(jx, jz, sc * 1.8) && rd > sc * 1.35 + ROAD_GAP) { I.add('spire', jx, -0.2, jz, R() * TAU, sc, tint[Math.floor(R() * tint.length)]); solid(jx, jz, sc * 1.35, 40, 'rock'); placed.add(jx, jz, sc * 1.8); stats.rocks++; }
         continue;
       }
       if (tall && bi.cactus && pick(bi.cactus * cl)) { if (placed.free(jx, jz, 2)) { I.add('cactus', jx, 0, jz, R() * TAU, 0.8 + R() * 0.6, 0xffffff); solid(jx, jz, 0.5, 3); placed.add(jx, jz, 1.6); } continue; }
-      if (bi.r && rd > 2.2 && campClear(jx, jz, 0, 0.55) && pick(bi.r * (0.5 + cl * 0.6))) { const sc = 0.7 + Math.pow(R(), 2.2) * 2.4; if (placed.free(jx, jz, sc * 0.7)) plantRock(jx, jz, sc, zn); continue; }
+      if (bi.r && rd > 2.2 && campClear(jx, jz, 0, 0.55) && pick(bi.r * (0.5 + cl * 0.6))) { const sc = 0.7 + Math.pow(R(), 2.2) * 2.4; if (placed.free(jx, jz, sc * 0.7) && rd > sc * 0.62 + ROAD_GAP) plantRock(jx, jz, sc, zn); continue; }
       if (bi.b && rd > 1.6 && campClear(jx, jz, 0, 0.5) && pick(bi.b * cl)) { I.add('bush', jx, 0, jz, R() * 6, 0.7 + R() * 0.7, [0xffffff, 0xe8f0d8, 0xf0ecd8][Math.floor(R() * 3)]); if (R() < 0.35) solid(jx, jz, 0.5, 1.2, 'bush'); stats.bushes++; continue; }
       if (bi.fern && FOREST && pick(bi.fern * cl)) { I.add('fern', jx, 0, jz, R() * TAU, 0.8 + R() * 0.7, [0xffffff, 0xe6f6e0, 0xf4f0d8][Math.floor(R() * 3)]); continue; }
       if (bi.shroom && FOREST && rd > 3 && pick(bi.shroom * cl)) { const hue = R() < 0.6 ? 0x5fe8d8 : R() < 0.5 ? 0x9a8cff : 0x8cf07a; I.add('shrooms', jx, 0, jz, R() * TAU, 0.9 + R() * 0.8, hue); glow.push([jx, yAt(jx, jz) + 0.35, jz, 0, hue]); continue; }
@@ -427,7 +432,7 @@
       const [mx, mz] = W.sites.mill;
       building(mx + 14, mz - 13, 0.0, 8, 10, 3.6, M.stone, 0xc8bca4, 0x6a5444);
       B.push(mx + 9.6, 0, mz - 13, 0); B.cyl(M.wood, 0, 1.6, 0, 2.2, 2.2, 0.5, 14, { color: 0x4f3d2e, a0: 0, a1: TAU }); B.pop();
-      V.Props.fence(B, M, col, [[mx + 20, mz - 5], [mx + 20, mz - 2], [mx + 6, mz - 2]], { kind: 'picket', h: 0.8, seed: 5 });
+      V.Props.fence(B, M, col, [[mx + 14, mz - 5], [mx + 14, mz - 2], [mx + 6, mz - 2]], { kind: 'picket', h: 0.8, seed: 5 });   // (was mx + 20: the fence ran into the main road)
     }
 
     /* rabbit warren: burrows around the rabbit camps + the heart mound with a giant hole, carrot gardens, wooden sign */
@@ -435,14 +440,16 @@
       const n = cp.species === 'rabbit_king' ? 0 : 5;
       for (let k = 0; k < n; k++) {
         const a = k / n * TAU + R() * 0.6, r = cp.r * (0.45 + R() * 0.5), x = cp.cx + Math.cos(a) * r, z = cp.cz + Math.sin(a) * r;
-        if (!c.inside(x, z, 2)) continue;
+        if (!c.inside(x, z, 2) || W.roadDist(x, z) < 1.15 + 1.2) continue;
         I.add('burrow', x, -0.05, z, a + PI + (R() - 0.5) * 0.5, 0.9 + R() * 0.7, 0xffffff); solid(x, z, 1.15, 0.9, 'rock'); stats.props++;
       }
     }
     {
       const [hx, hz] = W.sites.warrenHeart;
       I.add('burrow', hx, -0.05, hz + 9, 0, 2.1, 0xffffff); solid(hx, hz + 9, 2.6, 1.5, 'rock');
-      for (const [gx, gz, w, d] of [[hx - 46, hz + 32, 14, 9], [hx + 30, hz - 48, 12, 8], [hx + 62, hz + 30, 10, 12]]) {
+      /* carrot gardens: slide a garden sideways when a road would run through its fence */
+      const gardenSpot = ([gx0, gz0, w0, d0]) => { const need = Math.hypot(w0, d0) / 2 + 3.5; for (const [ox, oz] of [[0, 0], [-16, 0], [16, 0], [0, 16], [0, -16], [-30, 0], [30, 0], [-16, 16], [16, -16], [-16, -16], [16, 16]]) if (W.roadDist(gx0 + ox, gz0 + oz) > need && W.sdAt(gx0 + ox, gz0 + oz) < -4) return [gx0 + ox, gz0 + oz, w0, d0]; return null; };
+      for (const [gx, gz, w, d] of [[hx - 46, hz + 32, 14, 9], [hx + 30, hz - 48, 12, 8], [hx + 62, hz + 30, 10, 12]].map(gardenSpot).filter(Boolean)) {
         for (let x = -w / 2; x < w / 2; x += 1.0) for (let z = -d / 2; z < d / 2; z += 0.95) if (c.inside(gx + x, gz + z, 2)) I.add('carrot', gx + x, 0, gz + z, R() * 6, 0.9 + R() * 0.3, 0xffffff);
         V.Props.fence(B, M, col, [[gx - w / 2 - 1, gz - d / 2 - 1], [gx + w / 2 + 1, gz - d / 2 - 1], [gx + w / 2 + 1, gz + d / 2 + 1], [gx - w / 2 - 1, gz + d / 2 + 1], [gx - w / 2 - 1, gz - d / 2 - 1]], { kind: 'picket', h: 0.7, seed: 21 + (gx | 0), gaps: [[0, 3]] });
       }
@@ -457,11 +464,11 @@
       const nt = cp.count > 5 ? 3 : 2;
       for (let k = 0; k < nt; k++) {
         const a = k / nt * TAU + 0.6 + R() * 0.3, r = cp.r * 0.78, x = cp.cx + Math.cos(a) * r, z = cp.cz + Math.sin(a) * r;
-        if (!c.inside(x, z, 3)) continue;
+        if (!c.inside(x, z, 3) || W.roadDist(x, z) < 1.9 + 1.2) continue;
         I.add('tent', x, 0, z, a + PI * 0.5, 0.9 + R() * 0.2, frost ? 0xaec4d8 : [0xffffff, 0xe8d0b0, 0xd8c0a0][k % 3]); solid(x, z, 1.9, 3, 'building'); stats.props++;
       }
-      I.add('campfire', cp.cx, 0, cp.cz, 0, 1, 0xffffff); col.circle(cp.cx, cp.cz, 0.8, 0.5, 'props'); glow.push([cp.cx, yAt(cp.cx, cp.cz) + 0.8, cp.cz, 0, 0xff9a3a]);
-      I.add('totem', cp.cx + 3.2, 0, cp.cz - 4.2, 0.4, 1, 0xffffff); col.circle(cp.cx + 3.2, cp.cz - 4.2, 0.35, 4, 'props');
+      if (W.roadDist(cp.cx, cp.cz) > 3) { I.add('campfire', cp.cx, 0, cp.cz, 0, 1, 0xffffff); col.circle(cp.cx, cp.cz, 0.8, 0.5, 'props'); glow.push([cp.cx, yAt(cp.cx, cp.cz) + 0.8, cp.cz, 0, 0xff9a3a]); }
+      if (W.roadDist(cp.cx + 3.2, cp.cz - 4.2) > 2) { I.add('totem', cp.cx + 3.2, 0, cp.cz - 4.2, 0.4, 1, 0xffffff); col.circle(cp.cx + 3.2, cp.cz - 4.2, 0.35, 4, 'props'); }
       for (let k = 0; k < 3; k++) { const a = R() * TAU, r = 2.5 + R() * 2.5; I.add(k % 2 ? 'crate' : 'barrel', cp.cx + Math.cos(a) * r, 0, cp.cz + Math.sin(a) * r, R() * 6, 1, 0xffffff); }
     }
     {   // Goblin fortress (Kemikkıran): palisade ring with a north gate, four watch posts, torches, banners, throne
@@ -584,7 +591,8 @@
     const main = W.roadLines.find((r) => r.id === 'main');
     if (main) for (let s = 6, acc = 0, last = 0; s < main.line.length; s++) {
       const p = main.line[s]; acc = p[2] - last; if (acc < 130) continue; last = p[2];
-      const x = p[0] + 3.6, z = p[1], gy = yAt(x, z);
+      const q = main.line[Math.min(s + 1, main.line.length - 1)], o = main.line[s - 1], tl = Math.hypot(q[0] - o[0], q[1] - o[1]) || 1;     // offset along the road's NORMAL (a fixed +x offset landed in the road on bends)
+      const x = p[0] - (q[1] - o[1]) / tl * 4.0, z = p[1] + (q[0] - o[0]) / tl * 4.0, gy = yAt(x, z);
       post(x, gy, z, 2.4, 0.14); B.box(M.iron, x, gy + 2.5, z, 0.34, 0.4, 0.34, { color: 0x2f2f31 }); B.box(M.ember, x, gy + 2.5, z, 0.22, 0.3, 0.22, { color: 0xffffff });
       col.circle(x, z, 0.3, 3, 'props'); glow.push([x, gy + 2.5, z, 0, 0xffb060]);
     }
