@@ -54,11 +54,14 @@
     system: { tag: 'SİSTEM', sender: 'SİSTEM', tagCol: SYSTEM, senderCol: SYSTEM, groove: SYSTEM, body: SYSTEM, noSenderInAll: true },
     combat: { tag: 'SAVAŞ', sender: 'SAVAŞ', tagCol: PARTY_SENDER, senderCol: PARTY_SENDER, groove: PARTY, body: TEXT, noSenderInAll: true },
     self: { tag: '', sender: 'Sen', tagCol: '', senderCol: SENDER, groove: TEXT, body: TEXT, noSenderInAll: false },
+    // Genel: gerçek ağ kanalı (Atherion's say channel palette); own line shows as "Sen", others "Ad:"
+    global: { tag: 'GENEL', sender: '', tagCol: SAY, senderCol: SENDER, groove: SAY, body: TEXT, noSenderInAll: false },
   };
   // tone → body colour (mapped onto Atherion's chat palette)
   const TONE = { sys: SYSTEM, lvl: CLAN, buff: SENDER, end: C.BONE, dmg: TEXT, crit: SAY, dot: CLAN_SENDER, hurt: PARTY };
   const TABS = [
     { id: 'all', label: 'Tümü', badge: C.BONE, match: () => true },
+    { id: 'global', label: 'Genel', badge: SAY, match: (e) => e.ch === 'global' },
     { id: 'system', label: 'Sistem', badge: SYSTEM, match: (e) => e.ch === 'system' },
     { id: 'combat', label: 'Savaş', badge: PARTY, match: (e) => e.ch === 'combat' },
   ];
@@ -145,11 +148,14 @@
 
     /* ── rows: runs → wrapped lines (RichTextLabel autowrap word-smart) ── */
     function runsOf(e, withTag) {
-      const ch = CH[e.ch] || CH.system, body = e.ch === 'self' ? ch.body : (TONE[e.tone] || ch.body), out = [];
+      const ch = CH[e.ch] || CH.system, body = (e.ch === 'self' || e.ch === 'global') ? ch.body : (TONE[e.tone] || ch.body), out = [];
       if (stamps) out.push([e.hm + ' ', MSG_FONT, TAG_SEP]);
       if (withTag && ch.tag) { out.push([ch.tag, MSG_BOLD, ch.tagCol]); out.push([' ', MSG_FONT, TAG_SEP]); out.push(['·', MSG_FONT, TAG_SEP]); out.push([' ', MSG_FONT, TAG_SEP]); }
       if (withTag && ch.noSenderInAll) out.push([e.text, MSG_FONT, body]);   // "SİSTEM · text": the tag already names the source
-      else { out.push([ch.sender + ':', MSG_BOLD, ch.senderCol]); out.push([' ' + e.text, MSG_FONT, body]); }
+      else {
+        const sender = e.from ? String(e.from) : ch.sender;                  // Genel: gerçek gönderen ("Sen" own mesajlarda)
+        out.push([sender + ':', MSG_BOLD, ch.senderCol]); out.push([' ' + e.text, MSG_FONT, body]);
+      }
       return out;
     }
     function measure(t, font) { g.font = font; return g.measureText(t).width; }
@@ -323,7 +329,13 @@
     }
     function submit() {
       const text = inp.value.replace(/\s+/g, ' ').trim();
-      if (text) { scroll = 0; push({ ch: 'self', text, tone: '' }); }
+      if (text) {
+        // hud.onChatSend: the game hooks outgoing chatter (Net → server). true = sent to the network,
+        // so the line lands in the Genel channel as "Sen: …"; no hook / offline = the old local line.
+        const sent = hud.onChatSend ? !!hud.onChatSend(text) : false;
+        scroll = 0;
+        push(sent ? { ch: 'global', text, own: true, from: 'Sen' } : { ch: 'self', text, tone: '' });
+      }
       closeChat();
     }
     inp.addEventListener('keydown', (e) => {
@@ -366,8 +378,11 @@
     setTab(0);
     return {
       root,
-      // ch: 'system' | 'combat'; tone: sys, lvl, buff, end, crit, hurt, dot, dmg
-      add(ch, text, tone) { return push({ ch: ch === 'combat' ? 'combat' : 'system', text: String(text), tone: tone || '' }); },
+      // ch: 'system' | 'combat' | 'global'; tone: sys, lvl, buff, end, crit, hurt, dot, dmg; from: Genel gönderene adı
+      add(ch, text, tone, from) {
+        if (ch === 'global') return push({ ch, text: String(text), tone: '', from });
+        return push({ ch: ch === 'combat' ? 'combat' : 'system', text: String(text), tone: tone || '' });
+      },
       applySettings(st) {
         const ts = !!st.timestamps, ra = clamp((+st.logAlpha || 0) / FACE_ALPHA_FULL, 0, 1);
         if (ts !== stamps || ra !== restP) { stamps = ts; restP = ra; dirty = true; }

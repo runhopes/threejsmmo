@@ -25,7 +25,7 @@ Goal: a relit "Classic+ MMO" look (reference screenshots analysed): tinted depth
 pockets, warm low sun against blue-teal shade, god rays, giant trees, dappled light. `?atmo=0` = the previous look.
 The Poly Haven textures are the only images; every model is still procedural.
 
-* **Giant trees** are instanced templates (`giant0/1`, `giantFar`, `titan`). Crowns are alpha-tested leaf cards with
+* **Giant trees** are instanced templates (`giant0..3` ancient oaks / elder / grandmother tree, `greatpine0` tiered conifer, `giantFar`, `titan`). Every placement also adds a cheap `giantL*` / `greatpineL*` copy (`Forest.addGiant`); `world/terrain.js` `cull()` shows one of them per 32 m chunk by centre distance (`Forest.LOD_DIST`). `?giants=<k>` scales their density (world/scenery.js). Crowns are alpha-tested leaf cards with
   spherical normals on a **Lambert** material (per-vertex light, no shadow receive). The cards do NOT cast shadows: a
   crown-wide horizontal quad with the `dapple` silhouette (material `shadowOnly`, never reaches the screen) casts the
   dappled shadow. Card shadows alone cost ~30 % of a frame on the Radeon 610M, so keep it that way.
@@ -65,8 +65,14 @@ woodcutter, guards ×15 incl. elevated tower / gate posts with `position.y`), `t
 
 ## Constraints worth knowing
 
-* **Walkable ground is exactly y = 0.** The hero's foot IK plants feet at world y = 0, so elevation lives only where
-  nobody walks (hills beyond the boundary, plinths, stairs with colliders, raised beds).
+* **The hero is always at y = 0 (vertical frame).** The village itself is flat. In the open world (`world/*.js`) the ground has
+  walkable relief and climbable hills: `scene.js` (`setFrame`) shifts the whole world group by `-World.yBase` every frame
+  (`yBase` = true ground height under the hero), so the hero, the foot IK and every effect authored at "y = 0" stay on the
+  ground next to the hero. True height = `World.heightAt(x, z)`; height in the frame = `World.frameY(x, z)` (`VW.frameY`);
+  use `fY(x, z)` (index.html) for anything standing on the ground somewhere else (creatures, targets, impacts, markers).
+  Click-to-move / aim picking ray-marches the real terrain (`VW.pickGround(ray, out)`, replaces the flat `pickPlane`). Creature and
+  remote-player rigs animate at root y = 0 and are lifted onto the terrain afterwards (`creatures/world.js`, `app/net.js`); the hero's
+  feet follow the slope per foot through the optional `knight.groundAt(x, z)` hook (`knight.js _footGround`).
 * Static geometry is merged; to change a building, edit its generator and reload — there are no per-building meshes.
 * Dev tools: `village.html` (free camera viewer), `tools/villageshot.mjs`, `tools/villageplay.mjs` (real game input),
   `tools/villagenav.mjs` (reachability audit), `tools/villageperf.mjs` (frame-cost breakdown).

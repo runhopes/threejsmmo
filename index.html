@@ -20,6 +20,7 @@
 <link rel="stylesheet" href="ui/death.css">
 <link rel="stylesheet" href="ui/charwin.css">
 <link rel="stylesheet" href="ui/skillswin.css">
+<link rel="stylesheet" href="app/screens.css">
 <style>
   :root { --bg:#16252f; }
   * { box-sizing:border-box; }
@@ -54,6 +55,8 @@
 <body>
 <canvas id="c"></canvas>
 <div id="err"></div>
+<!-- Atherion online: hesap / karakter ekranları (app/screens.js doldurur) -->
+<div id="at-screen" hidden></div>
 
 <div id="select" hidden>
   <div><h1>SINIFINI SEÇ</h1><div class="sub">Bir karta tıkla, hareketini izle, sonra oyuna gir</div></div>
@@ -129,6 +132,7 @@
 <script src="world/terrain.js"></script>
 <script src="world/nav.js"></script>
 <script src="world/scenery.js"></script>
+<script src="world/mapart.js"></script>
 <script src="village/scene.js"></script>
 <script src="village/integrate.js"></script>
 <!-- archer VFX: pooled particles / trails / decals (vfx/core.js) + the archer skill effects (vfx/archer.js); bench: archer-vfx.html -->
@@ -146,6 +150,11 @@
 <script src="magefx/meshes.js"></script>
 <script src="magefx/spells.js"></script>
 <script src="magefx/director.js"></script>
+<!-- Atherion online: hesap / karakter ekranları (app/screens.*) + dünya ağı (app/net.js: uzak oyuncular, konum kaydı,
+     genel sohbet) · sunucu: `npm start` (server/src/index.js → http://localhost:3000). Ayrıntı: server/README.md -->
+<script src="app/api.js"></script>
+<script src="app/net.js"></script>
+<script src="app/screens.js"></script>
 <script>
 (function () {
   const q = new URLSearchParams(location.search);
@@ -177,6 +186,18 @@
       ['Esc', 'Pencereyi kapat · hedefi bırak · menü'], ['E · X · R', 'Geliştirici: darbe al · öl · diril']],
   });
   window.__hud = hud;
+  /* Atherion online hooks: menü şeridindeki "Çıkış" düğmesi → onay modalı (app/screens.js);
+     Enter ile yazılan satır → Genel kanal (app/net.js sunucuya iletir; sunucu yoksa eski lokale davranış) */
+  hud.onExit = () => AtherionScreens.exitConfirm();
+  hud.onChatSend = (text) => { if (window.Net && Net.ready) { Net.chat(text); return true; } return false; };
+  Net.init({
+    scene,
+    log: (t, tone) => hud.logLine('system', t, tone || 'sys'),
+    onChatLine: (m) => hud.log.add('global', m.text, '', m.from),
+    recentChat: (lines) => { for (const l of lines) if (l) hud.log.add('global', l.text, '', l.from); },
+    welcome: (you) => hud.logLine('system', (you.name || 'Kahraman') + ' sunucuya bağlandı. Çevrimiçisin.', 'sys'),
+    onClose: () => hud.logLine('system', 'Sunucu bağlantısı kesildi (girilince tekrar denenir).', 'sys'),
+  });
 
   /* ---------- environment (gives the metal something to reflect) ---------- */
   (function makeEnv() {
@@ -224,6 +245,10 @@
   const VW = (!debugAnim && window.Village && q.get('world') !== 'arena') ? Village.forGame({ renderer, scene, camera, sun, rim }) : null;
   if (VW) { ground.visible = false; ground.scale.set(4, 4, 1); grid.visible = false; }
   if (VW && VW.World) { ground.scale.set(8, 10, 1); ground.position.set(0, 0, 900); ground.updateMatrixWorld(); }   // open world: the click-to-move ray plane must cover the whole map (it ended at z = 480)
+  /* VERTICAL FRAME (world/layout.js + village/scene.js): the hero is always at y = 0, the world group moves by -yBase.
+     fY(x, z) = ground height in the frame at a point (0 without the open world): use it for anything that sits on the
+     ground at a place other than the hero (creatures, targets, impacts, markers). */
+  const fY = (x, z) => (VW && VW.frameY ? VW.frameY(x, z) : 0);
 
   // right-click move marker (vfx/marker.js): amber ring + chevrons snapping in, breathing while walking, fading on arrival
   const moveMark = MoveMarker.create(THREE, scene), marker = moveMark.group;
@@ -237,7 +262,7 @@
   let knight;
   if (debugAnim || forcedCls) knight = heroes[forcedCls || 'warrior'] = new Knight({ cls: forcedCls || 'warrior' });
   else { for (const c of ['warrior', 'archer', 'mage']) heroes[c] = new Knight({ cls: c }); knight = heroes.warrior; }
-  for (const k in heroes) { const h = heroes[k]; scene.add(h.root); scene.add(h.trail.mesh); scene.add(h.slash.group); }
+  for (const k in heroes) { const h = heroes[k]; scene.add(h.root); scene.add(h.trail.mesh); scene.add(h.slash.group); if (VW && VW.World) h.groundAt = fY; }   // walkable hills: feet ride the terrain (knight.js _footGround)
   window.__knight = knight;
   let selecting = !debugAnim && !forcedCls;
   hud.setPerf({ tris: Math.round(knight.triangles) });
@@ -323,7 +348,7 @@
   function dust(x, z, n, spread, up) {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, s = (0.6 + Math.random()) * spread;
-      _p.set(x + Math.cos(a) * 0.3, 0.08, z + Math.sin(a) * 0.3);
+      _p.set(x + Math.cos(a) * 0.3, 0.08 + fY(x, z), z + Math.sin(a) * 0.3);
       _v.set(Math.cos(a) * s, (up || 0.6) + Math.random() * 0.8, Math.sin(a) * s);
       spawn(_p, _v, 0.5 + Math.random() * 0.35, 0.22 + Math.random() * 0.16, 0xb9b2a4, -1.2, 1.8, 0.32);
     }
@@ -501,6 +526,7 @@
     const r = canvas.getBoundingClientRect();
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
+    if (VW && VW.World) { return !!VW.pickGround(ray, aimPoint); }          // vertical frame: ray-march the real terrain (y = frame height under the cursor)
     const hit = ray.intersectObject(ground)[0];
     if (hit) { aimPoint.copy(hit.point); aimPoint.y = 0; return true; }
     return false;
@@ -528,7 +554,7 @@
     if (VW && key && key.startsWith('vt:')) { const t = VW.trainingTarget(key); return t ? { x: t.pos.x, z: t.pos.z, r: t.radius, y: t.aimY } : null; }   // village training dummies / butts
     if (key === 'dummy') return dummy.g.visible ? { x: dummy.g.position.x, z: dummy.g.position.z, r: 0.42, y: 1.4 } : null;
     const c = creatures && creatures.byKey(key);
-    return c && c.alive && !c.despawned ? { x: c.x, z: c.z, r: c.D.radius, y: Math.min(1.4, Math.max(0.35, c.D.height * 0.55)), rec: c } : null;
+    return c && c.alive && !c.despawned ? { x: c.x, z: c.z, r: c.D.radius, y: fY(c.x, c.z) + Math.min(1.4, Math.max(0.35, c.D.height * 0.55)), rec: c } : null;
   }
   const engageGap = (T) => Math.hypot(T.x - knight.root.position.x, T.z - knight.root.position.z) - T.r;
   function strikeAt(T) {                                          // face the target, aim, one basic attack (combo continues)
@@ -563,6 +589,7 @@
   };
 
   window.addEventListener('keydown', (e) => {
+    if (!e.key) return;                                          // tarayıcı otomatik doldurma 'key'siz olay gönderir (giriş formu)
     if (!selecting && hud.onKeyDown(e)) return;                  // HUD windows / Esc / keys typed into HUD controls
     if (VW && e.key === '`' && !e.repeat) { VW.toggleDebug(); return; }   // village dev overlay: colliders, nav grid, spawns, NPC points
     if (e.repeat || selecting) return;
@@ -576,7 +603,7 @@
     else if (k === 'r') { const was = hero && hero.hp <= 0; knight.revive(); if (hero) { hero.hp = hero.maxHp; hero.hurtT = 99; if (was) hud.logLine('system', 'Dirildin.', 'sys'); } }      // dev: revive
     if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) moveTarget = null;
   });
-  window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+  window.addEventListener('keyup', (e) => { if (e.key) keys[e.key.toLowerCase()] = false; });
   window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   canvas.addEventListener('auxclick', (e) => e.preventDefault());   // no middle-click autoscroll
@@ -676,7 +703,7 @@
      rain / buff / hop effects). This page keeps aiming, hit tests and damage through the hooks below. Bench: archer-vfx.html ---------- */
   let rangedAim = null;
   let rangedTarget = null;                                      // creatures: the creature the current shot / aimed skill is fired at
-  const bodyPoint = (c, out) => (out || new THREE.Vector3()).set(c.x, Math.min(1.5, Math.max(0.3, c.D.height * 0.5)), c.z);
+  const bodyPoint = (c, out) => (out || new THREE.Vector3()).set(c.x, fY(c.x, c.z) + Math.min(1.5, Math.max(0.3, c.D.height * 0.5)), c.z);
   // projectile homing: turn the velocity toward the creature's body (keeps speed); false once the target is gone
   const _hw = new THREE.Vector3(), _hv = new THREE.Vector3();
   function homeToward(P, rate, dt) {
@@ -701,9 +728,9 @@
   function aimFrom(point) {                                     // snap to the dummy when the click is near it
     const t = dummy.g.position;
     const nc = creatures && creatures.nearest(point.x, point.z, 1.2);       // creatures: snap to one near the click
-    if (nc && Math.hypot(point.x - nc.x, point.z - nc.z) < Math.hypot(point.x - t.x, point.z - t.z)) return new THREE.Vector3(nc.x, Math.min(1.4, nc.D.height * 0.55), nc.z);
+    if (nc && Math.hypot(point.x - nc.x, point.z - nc.z) < Math.hypot(point.x - t.x, point.z - t.z)) return new THREE.Vector3(nc.x, fY(nc.x, nc.z) + Math.min(1.4, nc.D.height * 0.55), nc.z);
     if (Math.hypot(point.x - t.x, point.z - t.z) < 2.0) return new THREE.Vector3(t.x, 1.4, t.z);
-    return new THREE.Vector3(point.x, 1.4, point.z);
+    return new THREE.Vector3(point.x, point.y + 1.4, point.z);     // (point.y = frame height of the clicked ground)
   }
   // the first thing an arrow head enters this frame (a -> b): target capsules (creatures, dummies, village targets), then
   // village walls / props. The y = 0 ground is handled by ArcherVFX.
@@ -747,6 +774,7 @@
       shake(s) { shake = Math.max(shake, s); },
     },
   });
+  if (VW && VW.World) AV.groundY = fY;                          // arrows stop on the real terrain (vertical frame), not the y = 0 plane
   if (heroes.archer) AV.bindArcher(heroes.archer);              // draw / charge glows read the archer's real bow; the back hop is tracked
   window.__arrows = AV.projectiles;                             // (debug / tools: { m, pos, stuck } per flying or stuck arrow)
   window.__archerVFX = AV;
@@ -989,7 +1017,8 @@
   function meteorPoint() {                                      // ground point under the aim, clamped to the cast range
     const kp = knight.root.position, t = rangedAim ? rangedAim.clone() : kp.clone().add(_mv.set(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(6));
     t.y = 0; const d = t.clone().sub(kp); d.y = 0;
-    if (d.length() > METEOR_RANGE) t.copy(kp).addScaledVector(d.normalize(), METEOR_RANGE).setY(0);
+    if (d.length() > METEOR_RANGE) t.copy(kp).addScaledVector(d.normalize(), METEOR_RANGE);
+    t.y = fY(t.x, t.z);                                          // (vertical frame: the ground point sits on the terrain)
     return t;
   }
   function spawnCircle(point, R, cOut, cIn) {
@@ -1024,7 +1053,7 @@
     opts = opts || {};
     let circle = null;
     if (!at) { circle = meteorCircle || spawnCircle(meteorPoint()); meteorCircle = null; }
-    const to = (at || circle.point).clone().setY(0.25);
+    const src = at || circle.point, to = src.clone().setY((at ? fY(src.x, src.z) : src.y) + 0.25);   // (vertical frame: land on the terrain)
     const back = to.clone().sub(knight.root.position).setY(0); if (back.lengthSq() < 1e-4) back.set(Math.sin(yaw), 0, Math.cos(yaw)); back.normalize();
     const from = to.clone().addScaledVector(back, -6).add(_mv.set(0, 17, 0));   // falls in from high behind the caster
     const geo = new THREE.IcosahedronGeometry(0.5, 1), pa = geo.attributes.position;
@@ -1050,13 +1079,13 @@
       for (let k = 0; k < 2; k++) spawn(Mt.pos, _mv.set(rnd(0.4), 0.6, rnd(0.4)), 1.3, 0.4, 0x2c2522, 0.3, 2.4, 0.3);
       light = 5; boltLight.position.copy(Mt.pos);
       if (u >= 1) {
-        const P = Mt.to.clone().setY(0.3);
+        const P = Mt.to.clone().setY(Mt.to.y + 0.05);
         const SZ = Mt.size, RR = METEOR_R * SZ;
         explode(P, 2.3 * SZ, { ring: RR * 1.5, scorch: RR * 0.75 });
         dust(P.x, P.z, 14, 3.2, 0.9);
         for (let k = 0; k < 18; k++) {                           // ring of fire racing out along the ground
           const a = k / 18 * Math.PI * 2;
-          flame(_mq.set(P.x, 0.2, P.z), _mv.set(Math.cos(a) * 9, 0.4, Math.sin(a) * 9), 0.45, 0.42, 1.2, 0xffb840, 0xc02c08, 0.6, 5, 0.9);
+          flame(_mq.set(P.x, P.y - 0.1, P.z), _mv.set(Math.cos(a) * 9, 0.4, Math.sin(a) * 9), 0.45, 0.42, 1.2, 0xffb840, 0xc02c08, 0.6, 5, 0.9);
         }
         for (const tg of knight.hitTargets) {                   // area damage
           const dx = tg.pos.x - P.x, dz = tg.pos.z - P.z, dist = Math.hypot(dx, dz);
@@ -1288,7 +1317,7 @@
   for (const c in SKILLS) for (const s of SKILLS[c]) SKILL_BY_ID[s.id] = s;
   const skillMul = (id) => (id && SKILL_BY_ID[id] && SKILL_BY_ID[id].dmg) || 1;
 
-  let hero = null, SK = [];
+  let hero = null, SK = [], heroName = '';
   const dummyHP = { hp: 20000, max: 20000, t: 99 };
   // what the game knows about its entities / area, as shown by the HUD
   const DUMMY_INFO = { id: 'dummy', name: 'Eğitim Kuklası', level: 1, type: 'Talim hedefi', disposition: 'neutral', rank: 'normal' };
@@ -1297,14 +1326,18 @@
   let lastZone = null;                                          // creatures: spawn camp the player is in (region name + log line)
   let baseAttackSpeed = 1.08;
 
-  function initHUD(cls) {
+  function initHUD(cls, char) {
     const info = CLASS_INFO[cls];
     SK = SKILLS[cls];
     baseAttackSpeed = knight.attackSpeed;
-    hero = { cls, hp: info.hp, maxHp: info.hp, mp: info.mp, maxMp: info.mp, mpRegen: info.mpRegen, level: 1, exp: 0,
+    heroName = (char && typeof char === 'object' && char.name) ? String(char.name) : info.name;
+    const st = (char && typeof char === 'object') || null;
+    hero = { cls, hp: info.hp, maxHp: info.hp, mp: info.mp, maxMp: info.mp, mpRegen: info.mpRegen,
+      level: (st && +char.level > 1) ? +char.level : 1, exp: (st && isFinite(+char.exp)) ? +char.exp : 0,
       cd: SK.map(() => 0), buffs: {}, absorb: 0, rapidLeft: 0, pending: null, hurtT: 99, deadShown: false };
+    if (st && isFinite(+char.hp) && +char.hp > 0 && +char.hp < hero.maxHp) hero.hp = +char.hp;   // çıkışta kalan can
     const b = BASIC[cls];
-    hud.setPlayerInfo({ name: info.name, title: info.title, emblemHTML: iconSVG(info.emb, '', '', 'mono') });
+    hud.setPlayerInfo({ name: heroName, title: info.title, emblemHTML: iconSVG(info.emb, '', '', 'mono') });
     hud.setSkills(SK.map((s, i) => ({ id: s.id, name: s.name, key: String(i + 1), alt: i === 0 ? 'Q' : '', iconHTML: iconSVG(s.icon, s.c[0], s.c[1]), mp: s.mp, cd: s.cd, desc: s.desc })),
       { id: 'basic', name: b.name, iconHTML: iconSVG(b.icon, b.c[0], b.c[1]), desc: b.desc });
     hud.show();
@@ -1448,9 +1481,9 @@
         hud.logLine('system', C.D.name + ' öldürüldü · +' + fmt(ev.exp) + ' tecrübe' + (ev.loot && ev.loot.length ? ' · ' + ev.loot.map((l) => l.name).join(', ') : ''), 'lvl');
         // progress: Atherion ExpOrb - .3 s after the death ONE orb carries the whole reward to the hero; the EXP (HUD rail +N TP,
         // level-up) is credited when it is absorbed (timeouts / live cap credit it at once, so nothing is lost)
-        PFX.orb({ x: C.x, y: 0, z: C.z }, { pos: (out) => out.copy(knight.root.position) }, ev.exp, (n) => { if (hero) gainExp(n); }, 0.3);
+        PFX.orb({ x: C.x, y: fY(C.x, C.z), z: C.z }, { pos: (out) => out.copy(knight.root.position) }, ev.exp, (n) => { if (hero) gainExp(n); }, 0.3);
       }
-      IFX.kill({ x: C.x, z: C.z });                                  // impact: DeathBurst ring + rising smoke at the feet
+      IFX.kill({ x: C.x, y: fY(C.x, C.z), z: C.z });                                  // impact: DeathBurst ring + rising smoke at the feet
     };
     creatures.hooks.onEvent = (ev, C) => {
       if (!C) return;
@@ -1705,28 +1738,52 @@
   /* top-down render of the world for the minimap / world map (mapState.image): rendered once, orthographic, north (−Z) up.
      Hero, creatures and markers are hidden for the shot; fog is off so the far edges keep their colour. */
   let mapImage = null;
-  function captureMapImage() {
-    if (mapImage || !VW) return;
-    const b = REGION.bounds, w = b.maxX - b.minX, d = b.maxZ - b.minZ, px = 1024, py = Math.round(px * d / w);
+  /* one orthographic top-down render of [x0,x1]×[z0,z1] → canvas (shared by the world map and the hi-res minimap tile) */
+  function topDownCanvas(x0, x1, z0, z1, px, py, cullOff) {
+    if (VW && VW.World && VW.World.paintMap && !q.has('mapphoto')) return VW.World.paintMap(x0, x1, z0, z1, px, py);   // open world: hand-drawn sketch map (world/mapart.js); ?mapphoto = old 3D capture
+    const w = x1 - x0, d = z1 - z0;
     const cam = new THREE.OrthographicCamera(-w / 2, w / 2, d / 2, -d / 2, 1, 600);
-    cam.position.set((b.minX + b.maxX) / 2, 300, (b.minZ + b.maxZ) / 2); cam.up.set(0, 0, -1); cam.lookAt(cam.position.x, 0, cam.position.z); cam.updateMatrixWorld();
+    cam.position.set((x0 + x1) / 2, 300, (z0 + z1) / 2); cam.up.set(0, 0, -1); cam.lookAt(cam.position.x, 0, cam.position.z); cam.updateMatrixWorld();
     const rt = new THREE.WebGLRenderTarget(px, py);                  // same (linear) output encoding as the screen
-    const hide = [knight.root, knight.trail.mesh, knight.slash.group, marker, targetRing, auraRing, bubble].concat(VW.mapHide ? VW.mapHide() : []).filter(Boolean), was = hide.map((o) => o.visible);   // village: + god rays / fireflies
+    const hide = [knight.root, knight.trail.mesh, knight.slash.group, marker, targetRing, auraRing, bubble].concat(VW.mapHide ? VW.mapHide() : [], window.Net ? Net.roots() : []).filter(Boolean), was = hide.map((o) => o.visible);   // village: + god rays / fireflies
     hide.forEach((o) => { o.visible = false; });
     if (creatures) creatures.setVisible(false);
     const fog = scene.fog; scene.fog = null;
-    if (VW && VW.World) VW.World.cullOff(true);                      // open world: distance culling off for the one-off map shot
+    if (cullOff && VW && VW.World) VW.World.cullOff(true);           // open world: distance culling off for the one-off map shot
+    const gy = VW.group.position.y; VW.group.position.y = 0;           // vertical frame: shoot the world in true heights
     renderer.setRenderTarget(rt); renderer.render(scene, cam); renderer.setRenderTarget(null);
+    VW.group.position.y = gy;
     scene.fog = fog; hide.forEach((o, i) => { o.visible = was[i]; });
-    if (VW && VW.World) VW.World.cullOff(false);
+    if (cullOff && VW && VW.World) VW.World.cullOff(false);
     if (creatures) creatures.setVisible(true);
     const buf = new Uint8Array(px * py * 4); renderer.readRenderTargetPixels(rt, 0, 0, px, py, buf); rt.dispose();
     const cv = document.createElement('canvas'); cv.width = px; cv.height = py;
     const g = cv.getContext('2d'), img = g.createImageData(px, py);
     for (let y = 0; y < py; y++) img.data.set(buf.subarray((py - 1 - y) * px * 4, (py - y) * px * 4), y * px * 4);   // GL rows are bottom-up
     g.putImageData(img, 0, 0);
-    mapImage = { src: cv, minX: b.minX, maxX: b.maxX, minZ: b.minZ, maxZ: b.maxZ };
+    return cv;
+  }
+  function captureMapImage() {
+    if (mapImage || !VW) return;
+    const b = REGION.bounds, px = window.__MOBILE ? 768 : 1024, py = Math.round(px * (b.maxZ - b.minZ) / (b.maxX - b.minX));
+    mapImage = { src: topDownCanvas(b.minX, b.maxX, b.minZ, b.maxZ, px, py, true), minX: b.minX, maxX: b.maxX, minZ: b.minZ, maxZ: b.maxZ };
     window.__mapImage = mapImage;
+  }
+  /* minimap tile: 256 m square around the hero at 1536 px (6 px/m; the minimap needs ≈3.7 px/m at the default zoom, ×dpr).
+     Re-shot only when the hero walks > 68 m from the tile centre (the widest zoom shows ±60 m), window clamped to the world. */
+  const MINI_L = 256, MINI_PX = window.__MOBILE ? 640 : 1024, MINI_RECENTER = 68;   // (the sketch map is painted on the CPU: smaller tile on phones)
+  let miniImage = null, miniVer = 0;
+  function updateMiniImage(x, z) {
+    if (!mapImage || !VW) return;
+    const b = REGION.bounds, h = MINI_L / 2;
+    const cx = Math.min(Math.max(x, b.minX + h), b.maxX - h), cz = Math.min(Math.max(z, b.minZ + h), b.maxZ - h);
+    if (miniImage) {
+      const mx = (miniImage.minX + miniImage.maxX) / 2, mz = (miniImage.minZ + miniImage.maxZ) / 2;
+      if (Math.max(Math.abs(x - mx), Math.abs(z - mz)) <= MINI_RECENTER || (Math.abs(cx - mx) < 8 && Math.abs(cz - mz) < 8)) return;
+    }
+    const t0 = performance.now();
+    miniImage = { src: topDownCanvas(cx - h, cx + h, cz - h, cz + h, MINI_PX, MINI_PX, false), minX: cx - h, maxX: cx + h, minZ: cz - h, maxZ: cz + h, version: ++miniVer };
+    window.__miniImage = miniImage; window.__miniMs = performance.now() - t0;
   }
   function updateHUD(dt, force) {
     // sub-effects that run without a hero too (selection)
@@ -1776,10 +1833,10 @@
     if (targetSel === 'dummy' && Math.hypot(kp.x - dummy.g.position.x, kp.z - dummy.g.position.z) > 40) targetSel = null;
     const selC = creatures ? creatures.byKey(targetSel) : null;     // creatures: selected creature (kept while its corpse lies)
     if (targetSel && targetSel.startsWith('cr:') && (!selC || selC.despawned || (!selC.alive && selC.deadT > 4) || Math.hypot(kp.x - selC.x, kp.z - selC.z) > 40)) targetSel = null;
-    if (selC && targetSel) { targetRing.position.set(selC.x, 0.035, selC.z); targetRing.scale.setScalar(selC.D.radius + 0.25); targetRing.material.color.setHex(selC.alive ? (creatures.info(selC).disposition === 'hostile' ? 0xb5524c : 0xc49a55) : 0x6a6a6a); }
-    else { targetRing.position.set(dummy.g.position.x, 0.035, dummy.g.position.z); targetRing.scale.setScalar(1); targetRing.material.color.setHex(0xc49a55); }
+    if (selC && targetSel) { targetRing.position.set(selC.x, fY(selC.x, selC.z) + 0.035, selC.z); targetRing.scale.setScalar(selC.D.radius + 0.25); targetRing.material.color.setHex(selC.alive ? (creatures.info(selC).disposition === 'hostile' ? 0xb5524c : 0xc49a55) : 0x6a6a6a); }
+    else { targetRing.position.set(dummy.g.position.x, fY(dummy.g.position.x, dummy.g.position.z) + 0.035, dummy.g.position.z); targetRing.scale.setScalar(1); targetRing.material.color.setHex(0xc49a55); }
     const selV = VW && targetSel && targetSel.startsWith('vt:') ? VW.trainingTarget(targetSel) : null;   // village training targets
-    if (selV) { targetRing.position.set(selV.pos.x, 0.035, selV.pos.z); targetRing.scale.setScalar(selV.radius + 0.55); targetRing.material.color.setHex(0xc49a55); if (Math.hypot(kp.x - selV.pos.x, kp.z - selV.pos.z) > 40) targetSel = null; }
+    if (selV) { targetRing.position.set(selV.pos.x, fY(selV.pos.x, selV.pos.z) + 0.035, selV.pos.z); targetRing.scale.setScalar(selV.radius + 0.55); targetRing.material.color.setHex(0xc49a55); if (Math.hypot(kp.x - selV.pos.x, kp.z - selV.pos.z) > 40) targetSel = null; }
     targetRing.material.opacity += ((targetSel === 'dummy' || (selC && targetSel) || selV ? 0.7 : 0) - targetRing.material.opacity) * Math.min(1, dt * 12);
     targetRing.visible = targetRing.material.opacity > 0.01;
     // HUD state: the components diff it and only touch the DOM when something visible changes
@@ -1820,8 +1877,10 @@
         selected: targetSel === 'cr:' + rec.id, hostile: !(rec.D.behavior.aggro <= 0 && !rec.target), dead: !rec.alive,
         rank: rec.D.boss ? 'boss' : 'normal', aggro: rec.alive && !!rec.target });
     }
-    plates.push({ id: 'me', kind: 'player', name: CLASS_INFO[H.cls].name, level: H.level, hp: H.hp, maxHp: H.maxHp, x: kp.x, y: 2.15, z: kp.z, selected: false, hostile: false, dead: H.hp <= 0 });
-    S.map = { region: zone ? zone.name : REGION.name, world: REGION.name, bounds: REGION.bounds, image: mapImage, player: { x: kp.x, z: kp.z, yaw: knight.root.rotation.y }, view: { x: view.x, z: view.z },
+    plates.push({ id: 'me', kind: 'player', name: heroName || CLASS_INFO[H.cls].name, level: H.level, hp: H.hp, maxHp: H.maxHp, x: kp.x, y: 2.15, z: kp.z, selected: false, hostile: false, dead: H.hp <= 0 });
+    if (window.Net) Net.plates(plates, kp);                       // çevrimiçi oyuncular: uzak kahramanların levhaları
+    updateMiniImage(kp.x, kp.z);                                  // minimap: yüksek çözünürlüklü yerel çekim (bulanıklık düzeltmesi)
+    S.map = { region: zone ? zone.name : REGION.name, world: REGION.name, bounds: REGION.bounds, image: mapImage, miniImage, player: { x: kp.x, z: kp.z, yaw: knight.root.rotation.y }, view: { x: view.x, z: view.z },
       moveTo: moveTarget ? { x: moveTarget.x, z: moveTarget.z } : null,
       markers: (dummy.g.visible ? [{ id: 'dummy', x: dummy.g.position.x, z: dummy.g.position.z, kind: 'neutral', selected: targetSel === 'dummy', label: DUMMY_INFO.name }] : [])
         .concat(creatures ? creatures.markers(kp.x, kp.z, 60, targetSel) : []).concat(POI) };
@@ -1837,11 +1896,24 @@
     c.appendChild(row);
   });
 
-  /* ---------- class selection ---------- */
+  /* ---------- class selection ----------
+     Normal akış (Atherion online): klasör/class dağıtımı yerine önce hesap ekranları (app/screens.js) açılır; kullanıcı
+     hesabına girip karakterini seçince startGame(char) çağrılır. ?cls= / ?anim= debug yolları ekranları bypass eder ve
+     eski sınıf seçimini kullanır. */
   const selUI = document.getElementById('select'), enterBtn = document.getElementById('enter');
+  const authFlow = selecting;   // normal akış = hesaplı / çevrimiçi (app/screens.js + sunucu). ?cls= / ?anim= yalnızca geliştirici kısayoludur (araçlar kullanır)
   let chosen = null;
   const selRings = {};
-  if (selecting) {
+  if (authFlow) {
+    selUI.hidden = true; dummy.g.visible = false;
+    for (const k in heroes) heroes[k].root.visible = false;     // kahramanlar seçilince sahneye girer
+    if (creatures) creatures.setVisible(false);
+    controls.enabled = false;
+    AtherionScreens.init({
+      onEnter: (char) => startGame(char),                      // karakter seçimi ekranın kapanmasına ve oyuna girmeye denk gelir
+    });
+  } else {
+    /* eski sınıf seçimi (yalnızca debug / doğrudan URL) */
     selUI.hidden = false;
     controls.enabled = false; dummy.g.visible = false;
     if (creatures) creatures.setVisible(false);                // creatures: not on the class selection screen
@@ -1860,31 +1932,39 @@
         const h = heroes[chosen];                               // signature move as a preview
         h.revive(); h.sinceAttack = 99; h.attack();             // archer: shot, mage: fireball cast, warrior: first swing
       });
-      c.addEventListener('dblclick', () => startGame(c.dataset.cls));
+      c.addEventListener('dblclick', () => startGame({ cls: c.dataset.cls }));
     });
-    enterBtn.addEventListener('click', () => { if (chosen) startGame(chosen); });
+    enterBtn.addEventListener('click', () => { if (chosen) startGame({ cls: chosen }); });
   }
   if (!selecting) initHUD(knight.cls);                         // ?cls= skips the selection screen
-  function startGame(cls) {
+  function startGame(input) {
+    const char = (input && typeof input === 'object') ? input : { cls: input };   // string = eski debug yolu
+    const cls = char.cls || 'warrior';
     selecting = false;
     knight = heroes[cls]; window.__knight = knight;
     for (const k in heroes) {
       if (heroes[k] !== knight) { scene.remove(heroes[k].root); scene.remove(heroes[k].trail.mesh); scene.remove(heroes[k].slash.group); }
       if (selRings[k]) scene.remove(selRings[k]);
     }
-    knight.revive(); knight.action = null; knight.root.position.set(0, 0, 0);
-    if (MFX) MFX.attach(cls === 'mage' ? knight : null);           // magefx
-    yaw = Math.PI - 0.5; knight.root.rotation.y = yaw;
+    knight.revive(); knight.action = null;
     camera.position.set(...presets.iso.pos); controls.target.set(...presets.iso.tgt); controls.enabled = true;
-    if (VW) {                                                   // village: spawn on the plaza, south of the waystone, facing the keep
-      const sp = VW.spawn('plaza');
+    if (VW) {
+      /* konum kaydı: karakter diskteki yerinden doğar; hiç oynamadıysa meydan / training yard */
+      const s = (isFinite(+char.x) && (char.x || char.z) && (!VW.World || VW.World.sdAt(+char.x, +char.z) < -3)) ? {      /* a saved spot from an older map version (off the walkable floor) falls back to the plaza */ x: +char.x, z: +char.z, yaw: char.yaw, zone: char.zone } : null;
+      const sp = s ? { position: new THREE.Vector3(s.x, 0, s.z), yaw: isFinite(+s.yaw) ? +s.yaw : Math.PI - 0.5 } : VW.spawn('plaza');
       knight.root.position.copy(sp.position); yaw = sp.yaw; knight.root.rotation.y = yaw;
       camera.position.add(sp.position); controls.target.add(sp.position);
+    } else {
+      knight.root.position.set(0, 0, 0);
     }
+    if (MFX) MFX.attach(cls === 'mage' ? knight : null);           // magefx
+    yaw = knight.root.rotation.y;                                  // (yukarıda s/yaw atanmıştı)
     controls.update();
     selUI.remove(); dummy.g.visible = true;
+    knight.root.visible = true;
     if (creatures) creatures.setVisible(true);
-    initHUD(cls);
+    if (authFlow) Net.connect(char);                               // online: ws + sunucu daveti (app/net.js)
+    initHUD(cls, char);
     hud.setPerf({ tris: Math.round(knight.triangles) });
   }
 
@@ -1971,7 +2051,7 @@
     }
     knight.root.rotation.y = yaw;
     knight.update(dt, { move: curSpeed > 0.05 ? 1 : 0, speed: curSpeed });
-    if (VW) VW.collide(knight.root.position);                     // village: buildings, walls, props, world boundary
+    if (VW) { VW.collide(knight.root.position); VW.setFrame(knight.root.position); }   // village: buildings, walls, props, world boundary; then the vertical frame follows the ground under the hero
 
     // keep the knight out of the dummy
     const ddx = knight.root.position.x - dummy.g.position.x, ddz = knight.root.position.z - dummy.g.position.z;
@@ -1979,6 +2059,12 @@
     if (dd < minD && dd > 1e-4) { knight.root.position.x = dummy.g.position.x + ddx / dd * minD; knight.root.position.z = dummy.g.position.z + ddz / dd * minD; }
     // creatures: step the authority (AI, attacks, hit windows) with the hero's position, then sync the rendered views
     if (creatures) creatures.update(dt, { x: knight.root.position.x, z: knight.root.position.z, alive: !!hero && hero.hp > 0 && !knight.dead });
+    // online: uzak oyuncu interp + kendi konumum/ilerlemem 10 Hz sunucuya (WorldService düzenli disk'e yazar); zone kimliği de
+    if (window.Net && Net.ready) {
+      const zn = VW && VW.zoneName ? VW.zoneName(knight.root.position.x, knight.root.position.z) : '';
+      Net.frame(dt, knight.root.position, knight.root.rotation.y,
+        { level: hero ? hero.level : 1, exp: hero ? hero.exp : 0, hp: hero ? hero.hp : 1, zone: zn });
+    }
 
     // time scale for world fx so they freeze together with the knight's hit-stop
     timeScale = knight.hitStopT > 0 ? 0.04 : 1;
@@ -1998,7 +2084,7 @@
       if (p.life <= 0) { p.m.visible = false; continue; }
       p.v.y += p.grav * wdt;
       p.m.position.addScaledVector(p.v, wdt);
-      if (p.m.position.y < 0.03 && p.grav < 0) { p.m.position.y = 0.03; p.v.y *= -0.3; p.v.x *= 0.6; p.v.z *= 0.6; }
+      if (p.grav < 0) { const fl = fY(p.m.position.x, p.m.position.z) + 0.03; if (p.m.position.y < fl) { p.m.position.y = fl; p.v.y *= -0.3; p.v.x *= 0.6; p.v.z *= 0.6; } }
       const u = 1 - p.life / p.max;
       p.m.scale.setScalar(p.grow ? p.size * (1 + u * p.grow) : p.size * (1 - u * 0.85));
       p.m.material.opacity = p.a * (1 - u);
@@ -2025,6 +2111,10 @@
     shakeDir.multiplyScalar(Math.exp(-dt * 22));
     lastShake.set((Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5)).multiplyScalar(shake * 0.8).add(shakeDir);
     camera.position.add(lastShake);
+    if (VW && VW.World) {                                          // vertical frame: never let the orbiting camera sink into a slope
+      const minY = fY(camera.position.x, camera.position.z) + 1.2;
+      if (camera.position.y < minY) { camera.position.y = minY; camera.lookAt(controls.target); }
+    }
     const fov = 38 - punch * 2.2;
     if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
 
@@ -2032,6 +2122,7 @@
     sun.target.position.copy(knight.root.position);
     if (VW) { VW.updateTargets(wdt); VW.update(dt, camera, knight.root.position, sun); }   // village: dummies, roof fade, clutter LOD, shadow snapping
     moveMark.update(dt, !!moveTarget);
+    if (moveTarget && VW && VW.World) marker.position.y = fY(marker.position.x, marker.position.z) + 0.035;   // the move marker rides the slope
 
     renderer.render(scene, camera);
     frames++; fpsT += dt;

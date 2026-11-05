@@ -1,0 +1,89 @@
+/* Atherion giriş / karakter ekranları — hud.css token'larıyla aynı dili konuşur
+ * (Alegreya SC başlıklar, bronz kenarlıklar, koyu zemin). #at-screen index.html'de tam ekran overlay. */
+#at-screen { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; }
+#at-screen[hidden] { display: none !important; }
+
+#at-scrim {
+  position: absolute; inset: 0;
+  background: radial-gradient(120% 120% at 50% 0%, rgba(22, 37, 47, .78) 0%, rgba(10, 16, 20, .94) 100%);
+  backdrop-filter: blur(3px);
+}
+#at-panel {
+  position: relative; width: min(560px, 92vw); max-height: 88vh; overflow-y: auto;
+  background: rgba(23, 27, 28, .96); border: 1px solid #454944; border-radius: 2px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .55), inset 0 0 0 1px rgba(0, 0, 0, .4);
+  padding: 30px 34px 20px; color: #DDD7C8;
+  font: 14px/1.5 'Alegreya Sans', 'Segoe UI', system-ui, sans-serif; user-select: none;
+}
+#at-brand { text-align: center; margin-bottom: 18px; }
+#at-brand h1 {
+  margin: 0; font: 500 34px/1.1 'Alegreya SC', Georgia, serif; letter-spacing: .3em; color: #ECE5D4;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, .8);
+}
+#at-brand .at-sub { display: block; margin-top: 3px; color: #8a7a56; font: 500 11px 'Alegreya SC'; letter-spacing: .3em; }
+#at-foot { margin-top: 16px; text-align: center; color: #6b6f69; font-size: 11px; letter-spacing: .06em; }
+
+#at-tabs { display: flex; gap: 8px; justify-content: center; margin-bottom: 14px; }
+.at-tab {
+  all: unset; cursor: pointer; padding: 8px 22px; border: 1px solid #454944; color: #979C96;
+  font: 500 13px 'Alegreya SC'; letter-spacing: .12em; transition: border-color .12s, color .12s;
+}
+.at-tab:hover { border-color: #6B6F69; color: #DDD7C8; }
+.at-tab.on { border-color: #A58C63; color: #E3BE79; box-shadow: inset 0 -2px 0 #A58C63; }
+
+#at-error { margin: 6px 0 10px; padding: 9px 12px; border: 1px solid #7c2f29; background: rgba(120, 40, 35, .18); color: #ff9a92; font-size: 13px; }
+
+.at-fld { display: block; margin: 12px 0 0; }
+.at-fld > span { display: block; color: #979C96; font-size: 12px; letter-spacing: .08em; margin-bottom: 5px; }
+.at-fld input {
+  width: 100%; box-sizing: border-box; padding: 10px 12px; background: #1B2023; border: 1px solid #3d423e;
+  color: #ECE5D4; font: 14px 'Alegreya Sans'; outline: none; transition: border-color .12s;
+}
+.at-fld input:focus { border-color: #A58C63; }
+.at-fld input::placeholder { color: #5f665f; }
+
+#at-go, .at-go, .at-ghost, .at-mini {
+  all: unset; box-sizing: border-box; cursor: pointer; text-align: center;
+  font: 500 14px 'Alegreya SC'; letter-spacing: .14em; color: #DDD7C8;
+}
+#at-go {
+  display: block; width: 100%; margin-top: 18px; padding: 11px;
+  border: 1px solid #A58C63; background: #222729; transition: background .12s;
+}
+#at-go:hover { background: #2A2F31; }
+#at-go:disabled { opacity: .45; cursor: default; }
+
+.at-actions { display: flex; gap: 10px; justify-content: center; margin-top: 18px; }
+.at-actions.two { justify-content: stretch; }
+.at-actions.two .at-go, .at-actions.two .at-ghost { flex: 1; padding: 10px; }
+.at-ghost { padding: 10px 16px; border: 1px solid #454944; color: #979C96; background: none; }
+.at-ghost:hover { border-color: #6B6F69; color: #DDD7C8; }
+
+#at-who { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+#at-who b { color: #E3BE79; }
+.at-mini { margin-left: auto; padding: 5px 10px; border: 1px solid #454944; color: #979C96; font: 500 11px 'Alegreya Sans'; letter-spacing: .06em; }
+.at-mini:hover { color: #DDD7C8; border-color: #6B6F69; }
+
+.at-title { margin: 4px 0 14px; font: 500 20px 'Alegreya SC'; letter-spacing: .18em; color: #ECE5D4; text-align: center; }
+.at-empty { color: #979C96; text-align: center; padding: 16px 0 4px; font-size: 14px; }
+.at-note { margin-top: 14px; color: #6b6f69; text-align: center; font-size: 12px; }
+
+/* karakter kartları (#select .card token'ları) */
+.at-cards { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin: 8px 0 4px; }
+.at-char {
+  all: unset; box-sizing: border-box; cursor: pointer; width: min(46%, 250px);
+  display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start;
+  padding: 13px 15px 14px; background: rgba(20, 24, 26, .92); border: 1px solid #454944;
+  transition: border-color .12s;
+}
+.at-char:hover { border-color: #6B6F69; }
+.at-char.on { border-color: #A58C63; box-shadow: inset 0 -2px 0 #A58C63; }
+.at-char b { display: block; font: 500 17px 'Alegreya SC'; letter-spacing: .08em; color: #ECE5D4; }
+.at-char small { display: block; color: #A58C63; margin: 3px 0 7px; font-size: 12px; }
+.at-char p { margin: 0; color: #979C96; font-size: 12.5px; line-height: 1.45; }
+.at-char .at-go {
+  display: block; margin-top: 10px; padding: 7px 0; border-top: 1px solid #33383a;
+  color: #8a7a56; font: 500 11px 'Alegreya SC'; letter-spacing: .16em; transition: color .12s;
+}
+.at-char:hover .at-go { color: #E3BE79; }
+@media (max-width: 620px) { .at-char { width: 100%; } }

@@ -42,6 +42,7 @@
   /* stamp a walkable corridor (the deck) into the floor mask: a river band stays blocked beside it = the rails */
   W.stampBridges = function () {
     const B = W.bounds, G = W.G, sd = W.sd;
+    const deck = W.deck || (W.deck = new Uint8Array(W.NX * W.NZ));         // cells under a bridge deck: walk height = deck height (0), not the river bed
     for (const br of W.computeBridges()) {
       const R = br.L / 2 + br.W + 2, i0 = Math.max(0, Math.floor((br.x - R - B.minX) / G)), i1 = Math.min(W.NX - 1, Math.ceil((br.x + R - B.minX) / G));
       const j0 = Math.max(0, Math.floor((br.z - R - B.minZ) / G)), j1 = Math.min(W.NZ - 1, Math.ceil((br.z + R - B.minZ) / G));
@@ -51,6 +52,7 @@
         if (Math.abs(along) > br.L / 2 + 3 || across > br.W / 2) continue;
         const v = -(br.W / 2 - across) - 0.2;
         const k = j * W.NX + i; if (v < sd[k]) sd[k] = v;
+        if (across < br.W / 2 - 0.2) deck[k] = 1;
       }
     }
   };

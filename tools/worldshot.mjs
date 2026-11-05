@@ -25,12 +25,12 @@ try {
   console.log(JSON.stringify(await page.evaluate(() => { const w = window.__world; const V = window.Village; return { stats: w && w.stats, world: V.World && { fieldMs: Math.round(V.World.fieldMs), maps: V.World.maps && Math.round(V.World.maps.ms), terrain: V.World.terrainStats, populateMs: Math.round(V.World.populateMs || 0), scenery: V.World.sceneryStats, snapped: V.World.snapped, bridges: (V.World.bridges || []).length, nav: w.nav.wild && { w: w.nav.wild.w, h: w.nav.wild.h, ms: Math.round(w.nav.wild.buildMs) } } }; })));
   for (const s of specs) {
     const p = s.split(':'), name = p[0];
-    if (p[1] === 'ortho') { await page.setViewportSize({ width: +p[4] || 1100, height: +p[5] || 1100 }); await page.evaluate(([cx, cz, w, d]) => window.__ortho(cx, cz, w, d), [+p[2], +p[3], +p[6], +p[7]]); }
+    if (p[1] === 'ortho') { await page.evaluate(() => window.Village.World.cullOff(true)); await page.setViewportSize({ width: +p[4] || 1100, height: +p[5] || 1100 }); await page.evaluate(([cx, cz, w, d]) => window.__ortho(cx, cz, w, d), [+p[2], +p[3], +p[6], +p[7]]); }
     else if (p[1] === 'at') await page.evaluate(([x, z, k]) => window.__at(x, z, k), [+p[2], +p[3], p[4] ? +p[4] : 1]);
     else await page.evaluate(([a, b, f]) => window.__cam(a, b, f), [[+p[2], +p[3], +p[4]], [+p[5], +p[6], +p[7]], p[8] ? +p[8] : 0]);
     await page.waitForTimeout(700);
     await page.screenshot({ path: path.join(out, name + '.png') });
-    if (p[1] === 'ortho') { await page.evaluate(() => window.__ortho(0, 0, 0, 0)); await page.setViewportSize({ width: W, height: H }); }
+    if (p[1] === 'ortho') { await page.evaluate(() => { window.__ortho(0, 0, 0, 0); window.Village.World.cullOff(false); }); await page.setViewportSize({ width: W, height: H }); }
   }
 } finally { await browser.close(); }
 console.log(bad ? 'ERRORS' : 'ok');

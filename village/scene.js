@@ -877,7 +877,7 @@
       g.setAttribute('color', new T.Float32BufferAttribute(colA, 3));
       const sky = new T.Mesh(g, new T.MeshBasicMaterial({ vertexColors: true, side: T.BackSide, fog: false, depthWrite: false }));
       sky.renderOrder = -10; sky.name = 'village_sky'; sky.frustumCulled = false;
-      sky.onBeforeRender = function (r, sc, cam) { this.position.copy(cam.position); this.updateMatrixWorld(); };
+      sky.onBeforeRender = function (r, sc, cam) { this.position.copy(cam.position); this.position.y -= this.parent.position.y; this.updateMatrixWorld(); };   // (vertical frame: cancel the group's -yBase shift)
       group.add(sky);
     }
     const lights = ctx.lights || {};
@@ -914,8 +914,39 @@
       sun.target.updateMatrixWorld();
     }
     let lodT = 0;
+    /* VERTICAL FRAME: the hero is always at y = 0; the whole world group is shifted by -yBase (the true ground height under
+       the hero) so every effect authored at "y = 0" still sits on the ground next to the hero. W.heightAt = true height,
+       W.frameY = height in the frame. Call setFrame(hero) after the hero has moved (index.html does, before the creatures sync). */
+    function setFrame(p) {
+      if (!WORLD || !p) return 0;
+      WORLD.yBase = WORLD.walkY(p.x, p.z);
+      group.position.y = -WORLD.yBase;
+      return WORLD.yBase;
+    }
+    const frameY = (x, z) => (WORLD ? WORLD.frameY(x, z) : 0);
+    /* click-to-move / aim picking on the real terrain (replaces the flat y = 0 pickPlane): ray-march against the frame height.
+       Returns a point in FRAME coordinates (y = frame height), or null when the ray never meets the ground. */
+    const _pgp = new T.Vector3();
+    function pickGround(ray, out) {
+      const o = ray.ray ? ray.ray.origin : ray.origin, d = ray.ray ? ray.ray.direction : ray.direction;
+      out = out || new T.Vector3();
+      if (!WORLD) { if (Math.abs(d.y) < 1e-6) return null; const t = -o.y / d.y; if (t < 0) return null; out.copy(o).addScaledVector(d, t); out.y = 0; return out; }
+      if (o.y < frameY(o.x, o.z)) return null;
+      let t0 = 0, t1 = 0;
+      for (let t = 1.5; t < 520; t += t < 60 ? 1.0 : 2.5) {
+        _pgp.copy(o).addScaledVector(d, t);
+        if (_pgp.y <= frameY(_pgp.x, _pgp.z)) {
+          t1 = t; t0 = t - (t < 60 ? 1.0 : 2.5);
+          for (let k = 0; k < 14; k++) { const m = (t0 + t1) / 2; _pgp.copy(o).addScaledVector(d, m); if (_pgp.y <= frameY(_pgp.x, _pgp.z)) t1 = m; else t0 = m; }
+          out.copy(o).addScaledVector(d, t1); out.y = frameY(out.x, out.z); return out;
+        }
+        if (_pgp.y > 400) break;
+      }
+      return null;
+    }
     function update(dt, cam, playerPos, sun) {
       V.time.value += dt;
+      setFrame(playerPos);
       if (ATMO) ATMO.update(dt);
       if (playerPos) {
         V.fade.uFadeP.value.set(playerPos.x, playerPos.y + 1.05, playerPos.z);
@@ -1006,7 +1037,7 @@
     const world = {
       group, registry: reg, collision: col, nav, terrain, pickPlane, materials: M, config: cfg, World: WORLD,
       spawn: (id) => reg.spawns[id] || reg.spawns.plaza,
-      update, collide, findPath, projectileHit, updateSun, setDebug, toggleDebug: () => setDebug(!world.debug),
+      update, collide, findPath, projectileHit, updateSun, setDebug, setFrame, frameY, pickGround, toggleDebug: () => setDebug(!world.debug),
       setDetail: (on) => { detailOn = on; lodT = 0; },
       heightAt: terrain.height, debug: false,
       stats: { tris: Math.round(tris), meshes: draws, staticMeshes: staticMeshes.length, instanced: instMeshes.length, colliders: col.shapes.length, navCells: nav.w * nav.h, buildMs: Math.round(performance.now() - t0), texMs: Math.round(V.texTime), navMs: Math.round(navMs), tufts: V.stats_tufts, buildings: buildings.length },

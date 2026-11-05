@@ -134,6 +134,8 @@
       floor: phTex('floor'), floorN: phTex('floorN'),
       meadow: phTex('meadow'), meadowN: phTex('meadowN'),
       mossrock: phTex('mossrock'), mossrockN: phTex('mossrockN'),
+      // open-world ground layers (world/terrain.js; diffuse only): worn road dirt, pebbly trail / scree, patchy grass, beach sand
+      roaddirt: phTex('roaddirt'), trail: phTex('trail'), lgrass: phTex('lgrass'), sand: phTex('sand'),
     };
     return F.X;
   };
@@ -322,8 +324,33 @@
       const pts = [d.clone().multiplyScalar(r0 * 1.4).setY(1.3), d.clone().multiplyScalar(r0 * 2.2 + 0.8).add(side.clone().multiplyScalar(0.3)).setY(0.55),
         d.clone().multiplyScalar(r0 * 1.6 + L * 0.6).add(side.clone().multiplyScalar(0.7)).setY(0.28), d.clone().multiplyScalar(r0 * 1.2 + L).add(side).setY(-0.45)];
       const rr = r0 * 0.36 * w;
-      B.geo(M.giantBark, tube(pts, (t) => rr * (1 - 0.72 * t) + 0.06, 6, 6, (t, y) => barkCol(y, 0.55 + 0.35 * t), 0.06).geo, null, {});
+      B.geo(M.giantBark, tube(pts, (t) => rr * (1 - 0.72 * t) + 0.06, 8, 9, (t, y) => barkCol(y, 0.55 + 0.35 * t), 0.06).geo, null, {});
       roots.push({ x: pts[2].x, z: pts[2].z, r: rr * 0.7 + 0.25 });
+    }
+    // great conifer: tiered drooping boughs of leaf cards around a tall buttressed trunk (no limbs)
+    if (o.conifer) {
+      const co = { p: [], n: [], u: [], c: [], i: [] }, nt = o.lod ? 7 : 12, y0 = H * 0.2, tc = o.tint;
+      for (let t = 0; t < nt; t++) {
+        const u = t / (nt - 1), y = y0 + (H - y0) * Math.pow(u, 0.9), rad = o.spread * Math.pow(1 - u, 0.85) * (0.92 + R() * 0.16) + 0.5, c1 = center(y);
+        const axis = v3(c1[0], y, c1[1]), nk = Math.max(3, Math.round(rad * (o.lod ? 0.45 : 0.8)));
+        const cr = Math.max(1.0, rad * 0.46), crownR = v3(rad + cr, cr * 1.1, rad + cr);
+        for (let k = 0; k < nk + 1; k++) {
+          const a = k / nk * TAU + R() * 0.5, rr = k === nk ? 0 : rad * (0.62 + R() * 0.3);
+          const cc = axis.clone().add(v3(Math.cos(a) * rr, -rr * 0.22 + (R() - 0.5) * 0.5, Math.sin(a) * rr));
+          const hv = (R() - 0.5) * 0.1, kk = 1.9 * (0.9 + R() * 0.2);
+          cards(co, R, cc, cr * (0.85 + R() * 0.3), o.lod ? 3 : 5, axis.clone().add(v3(0, cr * 0.3, 0)), crownR, [tc[0] * kk * (1 + hv), tc[1] * kk, tc[2] * kk * (1 - hv)], o.lod);
+        }
+      }
+      B.geo(M.leafCard, finish(co.p, co.n, co.u, co.c, co.i), null, {});
+      const sh = { p: [], n: [], u: [], c: [], i: [] }, up = v3(0, 1, 0);
+      if (!o.lod) for (const [yy, rr] of [[H * 0.45, o.spread * 0.85], [H * 0.72, o.spread * 0.5]]) {
+        const a0 = R() * TAU, ax = v3(Math.cos(a0), 0, Math.sin(a0)), ay = v3(0, 0, 0).crossVectors(ax, up).normalize(), cen = v3(center(yy)[0], yy, center(yy)[1]);
+        const q = Math.floor(R() * 4), u0 = (q % 2) * 0.5, v0 = Math.floor(q / 2) * 0.5, b = sh.p.length / 3;
+        for (const [sx, sy, uu, vv] of [[-1, -1, u0, v0], [1, -1, u0 + 0.5, v0], [1, 1, u0 + 0.5, v0 + 0.5], [-1, 1, u0, v0 + 0.5]]) { const P = cen.clone().addScaledVector(ax, sx * rr).addScaledVector(ay, sy * rr); sh.p.push(P.x, P.y, P.z); sh.n.push(0, 1, 0); sh.u.push(uu, vv); sh.c.push(1, 1, 1); }
+        sh.i.push(b, b + 1, b + 2, b, b + 2, b + 3);
+      }
+      if (sh.p.length) B.geo(M.shadowOnly, finish(sh.p, sh.n, sh.u, sh.c, sh.i), null, {});
+      return { roots, crown: v3(0, H * 0.6, 0), spread: o.spread, r0, lobes: lobes.map(([a]) => a), conifer: true };
     }
     // limbs + canopy
     const out = { p: [], n: [], u: [], c: [], i: [] };
@@ -366,7 +393,7 @@
       cards(out, R, cc, r, o.lod ? 4 : o.cards, crownC, crownR, [tint[0] * k * (1 + hv), tint[1] * k, tint[2] * k * (1 - hv)], o.lod);
     }
     B.geo(M.leafCard, finish(out.p, out.n, out.u, out.c, out.i), null, {});
-    {   // shadow proxy: two crown-wide horizontal quads with the dapple silhouette (2 layers instead of ~15 card layers)
+    if (!o.lod) {   // (far copies beyond the shadow range have none) shadow proxy: two crown-wide horizontal quads with the dapple silhouette (2 layers instead of ~15 card layers)
       const sh = { p: [], n: [], u: [], c: [], i: [] }, up = v3(0, 1, 0);
       for (const [cc, r] of [[crownC.clone().add(v3(0, -crownR.y * 0.15, 0)), o.spread + o.cr * 0.5]]) {
         const a0 = R() * TAU, ax = v3(Math.cos(a0), 0, Math.sin(a0));
@@ -383,20 +410,29 @@
 
   /* ------------------------------------------ instanced templates ------------------------------------------ */
   function template(fn) { const B = new V.Builder({ chunk: 1e7 }); const info = fn(B); return { map: B.toGeometries(), info }; }
+  /* ancient trees: bigger than the first pass (the user wanted DEVASA trees: trunks you could not hug, crowns that roof the glade) */
   const GIANTS = [
-    // WoW-like proportions: very thick trunk, crown base ~5 player heights up, crown wider than tall
-    { seed: 11, h: 11.5, r: 1.7, lobes: 6, flareH: 2.2, twist: 0.8, bend: 1.4, lean: 0.5, limbs: 6, spread: 12, lift: 7.5, cr: 3.5, cards: 8, fill: 20, tint: [0.62, 0.78, 0.5] },
-    { seed: 23, h: 10, r: 1.45, lobes: 5, flareH: 1.9, twist: -1.0, bend: 2.0, lean: 0.9, limbs: 6, spread: 10.5, lift: 6.5, cr: 3.2, cards: 8, fill: 16, tint: [0.56, 0.76, 0.6] },
+    { seed: 11, h: 14, r: 2.3, lobes: 6, flareH: 3.0, twist: 0.8, bend: 1.8, lean: 0.6, limbs: 7, spread: 17, lift: 10, cr: 4.4, cards: 6, fill: 22, tint: [0.62, 0.78, 0.5] },        // broad ancient oak
+    { seed: 23, h: 12.5, r: 2.0, lobes: 5, flareH: 2.6, twist: -1.0, bend: 2.8, lean: 1.1, limbs: 7, spread: 15.5, lift: 9.5, cr: 4.1, cards: 6, fill: 20, tint: [0.56, 0.76, 0.6] },  // twisted, leaning
+    { seed: 37, h: 22, r: 2.5, lobes: 7, flareH: 3.6, twist: 0.5, bend: 1.4, lean: 0.4, limbs: 7, spread: 13, lift: 12, cr: 3.9, cards: 6, fill: 22, tint: [0.5, 0.74, 0.66] },       // tall elder (redwood-like)
+    { seed: 41, h: 15, r: 3.1, lobes: 8, flareH: 3.8, twist: 1.1, bend: 2.4, lean: 0.8, limbs: 8, spread: 20, lift: 10.5, cr: 4.7, cards: 6, fill: 26, tint: [0.6, 0.68, 0.74] },     // grandmother tree, lavender-blue
   ];
+  const PINES = [
+    { seed: 51, h: 24, r: 1.5, lobes: 6, flareH: 2.6, twist: 0.4, bend: 1.2, lean: 0.4, spread: 8.5, cr: 2.2, tint: [0.32, 0.54, 0.5], conifer: true },
+  ];
+  const lodOf = (o, seed) => Object.assign({}, o, { seed, lod: true, fill: Math.max(6, Math.round((o.fill || 12) * 0.3)), cards: 3 });
+  F.GIANT_COUNT = GIANTS.length; F.PINE_COUNT = PINES.length;
+  F.LOD_DIST = 52;                       // chunk-level: full detail inside, cheap copy outside (world/terrain.js cull)
   F.define = function (I, M) {
     F.materials(M);
     F.kinds = {};
-    const add = (name, tpl, layer, cast) => {
+    const add = (name, tpl, layer, cast, chunk) => {
       const parts = []; for (const [mat, geo] of tpl.map) parts.push({ geo, mat, cast: mat === M.leafCard ? !tpl.map.has(M.shadowOnly) : cast !== false });
-      I.define(name, parts, { layer: layer || 'main', chunk: 80 });
+      I.define(name, parts, { layer: layer || 'main', chunk: chunk || 80 });
       F.kinds[name] = tpl.info;
     };
-    GIANTS.forEach((o, i) => add('giant' + i, template((B) => giant(B, M, o.seed, o))));
+    GIANTS.forEach((o, i) => { add('giant' + i, template((B) => giant(B, M, o.seed, o)), 'main', true, 32); add('giantL' + i, template((B) => giant(B, M, o.seed + 500, lodOf(o, o.seed + 500))), 'main', true, 32); });
+    PINES.forEach((o, i) => { add('greatpine' + i, template((B) => giant(B, M, o.seed, o)), 'main', true, 32); add('greatpineL' + i, template((B) => giant(B, M, o.seed + 500, lodOf(Object.assign({}, o, { fill: 8 }), o.seed + 500))), 'main', true, 32); });
     add('giantFar', template((B) => giant(B, M, 57, Object.assign({}, GIANTS[0], { seed: 57, lod: true, fill: 10, cards: 4, tint: [0.6, 0.72, 0.62] }))));
     // the colossal landmark north of the keep
     add('titan', template((B) => giant(B, M, 99, { seed: 99, h: 26, r: 5.2, lobes: 8, flareH: 6, twist: 0.6, bend: 3, lean: 0.4, limbs: 9, spread: 30, lift: 18, cr: 8, cards: 9, fill: 34, tint: [0.58, 0.7, 0.8] })));
@@ -459,6 +495,13 @@
     }
   };
 
+  /* one placement = the full tree + a cheap copy; world/terrain.js shows one of them per chunk by distance */
+  F.addGiant = function (I, kind, x, y, z, ry, sc, tint) {
+    I.add(kind, x, y, z, ry, sc, tint);
+    const L = kind.replace(/^(giant|greatpine)/, '$1L');
+    if (F.kinds[L]) I.add(L, x, y, z, ry, sc, tint);
+  };
+
   /* ------------------------------------------ placement ------------------------------------------ */
   // ctx: { I, col, SP, R, terrain, walk, region, inWalls, roadClear, c (wall centre line), detail }
   F.populate = function (ctx) {
@@ -474,7 +517,7 @@
       const ry = R() * TAU, cs = Math.cos(ry), sn = Math.sin(ry);
       // instance rotation is about +y: local (lx, lz) -> world (lx*cos + lz*sin, -lx*sin + lz*cos)
       const W = (lx, lz) => [x + (lx * cs + lz * sn) * sc, z + (-lx * sn + lz * cs) * sc];
-      I.add(kind, x, inside ? 0 : terrain.height(x, z) - 0.2, z, ry, sc, tints[Math.floor(R() * tints.length)]);
+      F.addGiant(I, kind, x, inside ? 0 : terrain.height(x, z) - 0.2, z, ry, sc, tints[Math.floor(R() * tints.length)]);
       placed.push({ x, z, kind, sc, info });
       if (inside) {
         col.circle(x, z, info.r0 * 1.75 * sc, 40, 'tree');

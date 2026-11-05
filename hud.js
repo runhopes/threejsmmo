@@ -757,7 +757,7 @@
       deny(i) { hud.actions.deny(i); },
       // keyboard routing; returns true when the HUD consumed the key (the game must then ignore it)
       onKeyDown(e) {
-        if (root.hidden) return false;
+        if (root.hidden || !e.key) return false;
         const t = e.target, typing = t && ((t.tagName === 'INPUT' && /^(text|search|email|number|password)$/.test(t.type)) || t.tagName === 'TEXTAREA' || t.isContentEditable);
         if (typing) { if (e.key === 'Escape') t.blur(); return true; }      // keys typed into HUD controls never reach gameplay
         if (e.key === 'Escape') {

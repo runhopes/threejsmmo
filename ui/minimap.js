@@ -217,7 +217,8 @@
         const p = S.player, k = WIN / view, cx = WIN * 0.5, cy = WIN * 0.5, half = view * 0.5;
         const X = (wx) => cx + (wx - p.x) * k, Y = (wz) => cy + (wz - p.z) * k;
         const x0 = p.x - half, x1 = p.x + half, z0 = p.z - half, z1 = p.z + half;
-        if (!(S.image && S.image.src && drawImageLayer(g, S.image, X, Y, k, x0, z0, x1, z1))) drawVector(g, X, Y, k, x0, z0, x1, z1);
+        const mi = S.miniImage && S.miniImage.src ? S.miniImage : S.image;   // miniImage = oyuncu çevresinin yüksek çözünürlüklü çekimi (dünya görüntüsü ~0,8 px/m, bulanık kalır)
+        if (!(mi && mi.src && drawImageLayer(g, mi, X, Y, k, x0, z0, x1, z1))) drawVector(g, X, Y, k, x0, z0, x1, z1);
         vignette(g);
         // view cone (camera forward), linear fade centre -> rim
         if (S.view && (S.view.x * S.view.x + S.view.z * S.view.z) > 1e-6) {
@@ -270,7 +271,7 @@
         if (!S || !S.player) return;
         const p = S.player, v = S.view, ms = S.markers || [];
         let k = p.x.toFixed(2) + ',' + p.z.toFixed(2) + ',' + (+p.yaw || 0).toFixed(3) + '|' + (v ? v.x.toFixed(3) + ',' + v.z.toFixed(3) : '') + '|' + (S.region || '') + '|' +
-          (S.image && S.image.src ? 'i' + (S.image.version || 0) : '') + '|';
+          (S.image && S.image.src ? 'i' + (S.image.version || 0) : '') + (S.miniImage && S.miniImage.src ? 'm' + (S.miniImage.version || 0) : '') + '|';
         for (const m of ms) k += m.kind[0] + m.x.toFixed(1) + ',' + m.z.toFixed(1) + ';';
         if (k !== sig) { sig = k; dirty = true; }
         const ck = Math.round(p.x) + ', ' + Math.round(-p.z);

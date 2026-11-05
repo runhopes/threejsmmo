@@ -3,8 +3,8 @@
  *
  *  Height comes from layout.js (hgrid, 2 m). The mesh is built in 64 m chunks (frustum culled) that share one index
  *  buffer. One ground material blends, in world space: the village's own hi-res splat (inside its region), the
- *  world control map (roads, river banks, mud, forest floor, 2 m / px), the biome tint + snow map, and slope /
- *  altitude driven rock + snow. Walkable ground is flat y = 0; hills, cliffs and river gorges are scenery.
+ *  world control map (roads, river banks, mud, forest floor, 2 m / px), the biome tint map, and slope /
+ *  altitude driven rock. The floor has walkable relief (rolling swells + climbable hills, see layout.js); cliffs, rock massifs and river gorges are scenery.
  * ===================================================================================================== */
 (function () {
   'use strict';
@@ -54,11 +54,9 @@
     warren:   { tint: [1.08, 1.02, 0.82], snow: 0, mud: 0.05, bar: 0.04 },
     creek:    { tint: [0.9, 1.06, 0.96], snow: 0, mud: 0, bar: 0 },
     wolfwood: { tint: [0.74, 0.92, 0.74], snow: 0, mud: 0, bar: 0 },
-    hills:    { tint: [1.18, 1.06, 0.74], snow: 0, mud: 0, bar: 0.3 },
+    hills:    { tint: [1.08, 1.05, 0.86], snow: 0, mud: 0, bar: 0.22 },
     marsh:    { tint: [0.6, 0.78, 0.58], snow: 0, mud: 0.5, bar: 0 },
-    canyon:   { tint: [1.4, 0.84, 0.58], snow: 0, mud: 0, bar: 0.92 },
     shadow:   { tint: [0.52, 0.7, 0.62], snow: 0, mud: 0.05, bar: 0 },
-    frost:    { tint: [1.05, 1.14, 1.3], snow: 0.82, mud: 0, bar: 0.4 },
   };
   /* biome weights at a point: soft nearest-zone blend (exp falloff on distance outside the valley floor) */
   W.biomeBlend = function (x, z, out) {
@@ -95,13 +93,12 @@
       }
     }
     const bio = {};
-    const BS = 8, bnx = Math.ceil((B.maxX - B.minX) / BS), bnz = Math.ceil((B.maxZ - B.minZ) / BS), bt = new Uint8Array(bnx * bnz * 4), b2 = new Uint8Array(bnx * bnz * 4);
+    const BS = 8, bnx = Math.ceil((B.maxX - B.minX) / BS), bnz = Math.ceil((B.maxZ - B.minZ) / BS), bt = new Uint8Array(bnx * bnz * 4);
     for (let j = 0; j < bnz; j++) for (let i = 0; i < bnx; i++) {
       const x = B.minX + (i + 0.5) * BS, z = B.minZ + (j + 0.5) * BS;
       W.biomeBlend(x, z, bio);
       const k = (j * bnx + i) * 4;
-      bt[k] = clamp(bio.r / 2, 0, 1) * 255; bt[k + 1] = clamp(bio.g / 2, 0, 1) * 255; bt[k + 2] = clamp(bio.b / 2, 0, 1) * 255; bt[k + 3] = clamp(bio.snow, 0, 1) * 255;
-      b2[k] = clamp(bio.bar, 0, 1) * 255; b2[k + 3] = 255;
+      bt[k] = clamp(bio.r / 2, 0, 1) * 255; bt[k + 1] = clamp(bio.g / 2, 0, 1) * 255; bt[k + 2] = clamp(bio.b / 2, 0, 1) * 255; bt[k + 3] = clamp(bio.bar, 0, 1) * 255;
       // mud tendency of the biome is baked into the control map below (cheap lookup via the same cell)
       W._mudCell = W._mudCell || new Float32Array(bnx * bnz); W._mudCell[j * bnx + i] = bio.mud;
     }
@@ -117,9 +114,7 @@
     tex.minFilter = T.LinearFilter; tex.magFilter = T.LinearFilter; tex.wrapS = tex.wrapT = T.ClampToEdgeWrapping; tex.flipY = false; tex.needsUpdate = true; tex.generateMipmaps = false;
     const btex = new T.DataTexture(bt, bnx, bnz, T.RGBAFormat);
     btex.minFilter = T.LinearFilter; btex.magFilter = T.LinearFilter; btex.wrapS = btex.wrapT = T.ClampToEdgeWrapping; btex.flipY = false; btex.needsUpdate = true; btex.generateMipmaps = false;
-    const b2tex = new T.DataTexture(b2, bnx, bnz, T.RGBAFormat);
-    b2tex.minFilter = T.LinearFilter; b2tex.magFilter = T.LinearFilter; b2tex.wrapS = b2tex.wrapT = T.ClampToEdgeWrapping; b2tex.flipY = false; b2tex.needsUpdate = true; b2tex.generateMipmaps = false;
-    W.maps = { wc, tex, btex, b2tex, ms: performance.now() - t0 };
+    W.maps = { wc, tex, btex, ms: performance.now() - t0 };
     return W.maps;
   };
   /* forest floor painter (scenery.js): soft disc into the A channel */
@@ -146,17 +141,21 @@
       uSplat: { value: splat.splat }, uAO: { value: splat.ao },
       uGrass: { value: X.grass }, uDirt: { value: X.dirt }, uCobble: { value: X.cobble }, uPave: { value: X.pave }, uMacro: { value: X.macro },
       uRegion: { value: new T.Vector4(region.minX, region.minZ, region.maxX - region.minX, region.maxZ - region.minZ) },
-      uWC: { value: W.maps.tex }, uWBio: { value: W.maps.btex }, uWBio2: { value: W.maps.b2tex },
+      uWC: { value: W.maps.tex }, uWBio: { value: W.maps.btex },
+      uRoadT: { value: (FX && FX.roaddirt) || X.dirt }, uTrail: { value: (FX && FX.trail) || X.dirt }, uSand: { value: (FX && FX.sand) || X.dirt }, uLGrass: { value: (FX && FX.lgrass) || X.grass },
       uWB: { value: new T.Vector4(B.minX, B.minZ, NX * G, NZ * G) },
     };
-    if (FX) Object.assign(U, { uMeadow: { value: FX.meadow }, uFloor: { value: FX.floor }, uRock: { value: FX.mossrock || X.macro } });
+    if (FX) Object.assign(U, { uMeadow: { value: FX.meadow }, uFloor: { value: FX.floor }, uRock: { value: FX.mossrock || X.macro },
+      // (Poly Haven ground layers, CC0: park_dirt road, rocky_trail pebbles + scree, leafy_grass patches, coast_sand_01 beach; mud = road dirt darkened)
+    });
     else Object.assign(U, { uRock: { value: X.macro } });
+    U.uYB = { value: 0 };                                         // the world group is shifted by -yBase each frame: altitude effects add it back
     mat.onBeforeCompile = (sh) => {
       V.noIBL(sh);
       Object.assign(sh.uniforms, U);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vTW; varying vec3 vWN;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\n vTW = (modelMatrix * vec4(transformed, 1.0)).xyz; vWN = normal;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vTW; varying vec3 vWN;\nuniform sampler2D uSplat, uAO, uGrass, uDirt, uCobble, uPave, uMacro, uWC, uWBio, uWBio2, uRock; uniform vec4 uRegion; uniform vec4 uWB;' + (FX ? '\nuniform sampler2D uMeadow, uFloor;' : ''))
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vTW; varying vec3 vWN;\nuniform sampler2D uSplat, uAO, uGrass, uDirt, uCobble, uPave, uMacro, uWC, uWBio, uRock, uRoadT, uTrail, uSand, uLGrass; uniform vec4 uRegion; uniform vec4 uWB; uniform float uYB;' + (FX ? '\nuniform sampler2D uMeadow, uFloor;' : ''))
         .replace('#include <map_fragment>', [
           'vec2 wxz = vTW.xz;',
           'vec2 suv = (wxz - uRegion.xy) / uRegion.zw; suv.y = 1.0 - suv.y;',
@@ -168,29 +167,54 @@
           'vec3 tint = wb.rgb * 2.0;',
           'vec3 mac = texture2D(uMacro, wxz / 140.0).rgb;',
           'vec3 nW = normalize(vWN); float slope = 1.0 - nW.y;',
-          'float wC = sp.r, wD = max(sp.g, wc.r * (1.0 - inR)), wP = sp.b;',
+          'float altY = vTW.y + uYB;',
+          // road mask: the control map is soft; sharpen it and rag the edge with noise so the road reads as worn ground, not a ribbon
+          'float rRaw = wc.r * (1.0 - inR);',
+          'float wR = clamp((rRaw - 0.5) * 1.9 + 0.5 + (mac.r - 0.5) * 0.42 + (mac.b - 0.5) * 0.2, 0.0, 1.0);',
+          'float wC = sp.r, wD = max(sp.g, wR), wP = sp.b;',
           'float wG = max(0.0, 1.0 - wC - wD - wP);',
-          // ---- base grass (meadow) + forest floor (under the crowns: world map alpha / village forest mask) ----
+          // ---- base grass: meadow + patchy leafy grass, lush / dry swaths, forest floor under the crowns ----
           FX ? [
-            'vec3 gr = texture2D(uMeadow, wxz / 4.5 + mac.rg * 0.7).rgb * vec3(0.78, 0.92, 0.58);',
+            'vec3 gA = texture2D(uMeadow, wxz / 4.5).rgb * vec3(0.78, 0.92, 0.58);',
+            'vec3 gB = texture2D(uLGrass, vec2(wxz.y, -wxz.x) / 5.6 + vec2(0.37, 0.61)).rgb * vec3(0.9, 1.0, 0.7);',
+            'float gm = smoothstep(0.32, 0.68, texture2D(uMacro, wxz / 260.0 + vec2(0.37, 0.11)).g);',
+            'vec3 gr = mix(gA, gB, gm * 0.62);',
             'gr *= mix(vec3(0.82, 0.95, 0.92), vec3(1.1, 1.05, 0.8), smoothstep(0.3, 0.75, mac.r));',
             'gr = mix(gr, gr * vec3(1.12, 1.0, 0.7), smoothstep(0.55, 0.8, mac.b) * 0.45);',
+            'gr = mix(gr, gr * vec3(1.07, 1.02, 0.84), smoothstep(5.0, 20.0, altY) * 0.6);',
             'float fW = clamp(max(wc.a, aoS.b * inR) * (0.7 + 0.3 * mac.b), 0.0, 1.0);',
-            'if (fW > 0.01) { vec3 fl = texture2D(uFloor, wxz / 3.6 + mac.gr * 0.6).rgb * vec3(0.74, 0.96, 0.7); fl = mix(fl, fl * vec3(0.7, 1.05, 0.95), smoothstep(0.4, 0.8, mac.g)); gr = mix(gr, fl, fW); }'
-          ].join('\n') : 'vec3 gr = texture2D(uGrass, wxz / 4.0 + mac.rg * 0.6).rgb;',
+            'if (fW > 0.01) { vec3 fl = texture2D(uFloor, wxz / 3.6).rgb * vec3(0.74, 0.96, 0.7); fl = mix(fl, fl * vec3(0.7, 1.05, 0.95), smoothstep(0.4, 0.8, mac.g)); gr = mix(gr, fl, fW); }'
+          ].join('\n') : 'vec3 gr = texture2D(uGrass, wxz / 4.0).rgb;',
           'gr *= mix(vec3(1.0), tint, 1.0 - inR * 0.8);',
-          'float bar = texture2D(uWBio2, wuv).r * (1.0 - inR);',
-          'if (bar > 0.01) { vec3 dr = texture2D(uDirt, wxz / 3.2 + mac.gr * 0.5).rgb * mix(vec3(1.0), tint * 0.5 + 0.5, 0.95) * mix(0.8, 1.1, mac.g); gr = mix(gr, dr, clamp(bar * (0.5 + 1.0 * mac.g), 0.0, 1.0)); }',
+          // worn verge: the grass next to a road is dusty and thin
+          'gr = mix(gr, gr * vec3(1.18, 1.02, 0.7) + vec3(0.03, 0.02, 0.0), smoothstep(0.02, 0.2, rRaw) * (1.0 - smoothstep(0.35, 0.8, wR)) * 0.4);',
+          'float bar = wb.a * (1.0 - inR);',
+          'if (bar > 0.01) { vec3 dr = texture2D(uRoadT, wxz / 3.4).rgb * mix(vec3(1.0), tint * 0.5 + 0.5, 0.95) * mix(0.8, 1.1, mac.g); gr = mix(gr, dr, clamp(bar * (0.5 + 1.0 * mac.g), 0.0, 1.0)); }',
           'vec3 gcol = gr * wG; float wsum = wG;',
-          'if (wD > 0.004) { vec3 di = texture2D(uDirt, wxz / 3.0 + mac.gr * 0.5).rgb * mix(0.9, 1.06, mac.g); di *= mix(vec3(1.0), tint * 0.5 + 0.5, 1.0 - inR); float w = wD * (0.75 + dot(di, vec3(0.1667))); gcol += di * w; wsum += w; }',
+          // ---- roads: park_dirt body, rocky_trail pebbles along the shoulders, a slightly darker packed centre ----
+          'if (wD > 0.004) {',
+          '  vec3 di = texture2D(uRoadT, wxz / 3.2).rgb * mix(0.92, 1.1, mac.g) * vec3(1.06, 1.0, 0.9);',
+          '  vec3 pb = texture2D(uTrail, wxz / 2.6).rgb * vec3(0.96, 0.93, 0.86);',
+          '  float shoulder = smoothstep(0.1, 0.5, wD) * (1.0 - smoothstep(0.55, 0.95, wD));',
+          '  di = mix(di, pb, shoulder * 0.55);',
+          '  di *= mix(1.0, 0.86, smoothstep(0.7, 1.0, wD) * smoothstep(0.35, 0.7, mac.g));',
+          '  di *= mix(vec3(1.0), tint * 0.5 + 0.5, 1.0 - inR);',
+          '  float w = wD * (0.75 + dot(di, vec3(0.1667))); gcol += di * w; wsum += w; }',
           'if (wC > 0.004) { vec3 co = texture2D(uCobble, wxz / 2.2).rgb * mix(0.84, 1.06, mac.g); float w = wC * (0.55 + dot(co, vec3(0.5333))); gcol += co * w; wsum += w; }',
           'if (wP > 0.004) { vec3 pv = texture2D(uPave, wxz / 3.4).rgb * mix(0.9, 1.05, mac.b); gcol += pv * wP; wsum += wP; }',
           'gcol /= max(1e-4, wsum);',
-          // ---- river / lake banks (pale wet gravel) and mud (swamp) ----
-          'if (wc.g > 0.01) { vec3 gv = texture2D(uDirt, wxz / 2.4 + mac.rb * 0.4).rgb * vec3(1.18, 1.12, 1.0) + vec3(0.04); gcol = mix(gcol, gv * mix(0.62, 0.9, 1.0 - wc.g * 0.5), clamp(wc.g * 1.15, 0.0, 1.0)); }',
-          'if (wc.b > 0.01) { vec3 md = texture2D(uDirt, wxz / 2.8 + mac.gb * 0.4).rgb * vec3(0.5, 0.48, 0.38); gcol = mix(gcol, md, clamp(wc.b * 1.1, 0.0, 0.9)); }',
-          // ---- rock: steep faces + high ground, tinted by the biome ----
-          'float rk = smoothstep(0.2, 0.46, slope + (mac.g - 0.5) * 0.16 + smoothstep(25.0, 80.0, vTW.y) * 0.14);',
+          // ---- river / sea banks: coast sand that turns to wet pebbles at the water line; swamp mud ----
+          'if (wc.g > 0.01) {',
+          '  vec3 sd = texture2D(uSand, wxz / 3.2).rgb * vec3(1.12, 1.06, 0.95);',
+          '  vec3 pb2 = texture2D(uTrail, wxz / 2.3).rgb * vec3(0.9, 0.9, 0.88);',
+          '  vec3 gv = mix(sd, pb2, smoothstep(0.55, 1.0, wc.g) * 0.55 * smoothstep(0.3, 0.7, mac.g + 0.2));',
+          '  gv *= mix(1.0, 0.6, smoothstep(0.62, 1.0, wc.g));',
+          '  gcol = mix(gcol, gv, smoothstep(0.14, 0.62, wc.g + (mac.b - 0.5) * 0.22)); }',
+          'if (wc.b > 0.01) { vec3 md = texture2D(uRoadT, wxz / 3.0).rgb * vec3(0.46, 0.44, 0.34); gcol = mix(gcol, md, smoothstep(0.08, 0.7, wc.b + (mac.g - 0.5) * 0.25) * 0.92); }',
+          // ---- slopes: dry scree first, then mossy cliff rock on the steep faces; high ground gets rockier ----
+          'float scW = smoothstep(0.07, 0.2, slope + (mac.g - 0.5) * 0.07) * (1.0 - smoothstep(0.2, 0.42, slope));',
+          'if (scW > 0.01) { vec3 sc = texture2D(uTrail, wxz / 3.4).rgb * vec3(1.02, 0.99, 0.92) * mix(vec3(1.0), tint * 0.5 + 0.5, 0.7); gcol = mix(gcol, sc, scW * 0.85); }',
+          'float rk = smoothstep(0.2, 0.46, slope + (mac.g - 0.5) * 0.16 + smoothstep(25.0, 80.0, altY) * 0.14);',
           'if (rk > 0.01) {',
           '  float ax = abs(nW.x), az = abs(nW.z); vec3 rc;',
           '  vec2 uvA = vTW.zy / 7.0, uvB = vTW.xy / 7.0;',
@@ -198,14 +222,10 @@
           '  rc *= vec3(0.78, 0.76, 0.72) * mix(vec3(1.0), tint * 0.55 + 0.45, 0.8);',
           '  gcol = mix(gcol, rc, rk);',
           '}',
-          // ---- snow: frost biome + the highest peaks, thinner on the steepest faces ----
-          'float sn = clamp(wb.a + smoothstep(70.0, 118.0, vTW.y) * 0.85, 0.0, 1.0) * (1.0 - smoothstep(0.42, 0.78, slope) * 0.55);',
-          'sn *= smoothstep(0.25, 0.55, mac.b * 0.7 + 0.45 + (wb.a - 0.5) * 0.4);',
-          'if (sn > 0.01) { float lum = dot(gcol, vec3(0.3333)); vec3 snc = vec3(0.8, 0.87, 0.97) * (0.5 + 1.1 * lum) * (0.9 + 0.16 * mac.r); gcol = mix(gcol, snc, clamp(sn * 1.25, 0.0, 1.0)); }',
           'diffuseColor.rgb *= gcol * (0.6 + 0.4 * aoT);',
         ].join('\n'));
     };
-    mat.customProgramCacheKey = () => 'worldterrain' + (FX ? 'F' : '');
+    mat.customProgramCacheKey = () => 'worldterrain3' + (FX ? 'F' : '');
     W.terrainMaterial = mat;
     const idxCache = new Map();
     const indexFor = (w, h) => {
@@ -237,6 +257,7 @@
       g.boundingSphere = g.boundingBox.getBoundingSphere(new T.Sphere());
       const m = new T.Mesh(g, mat);
       m.receiveShadow = true; m.castShadow = false; m.matrixAutoUpdate = false; m.updateMatrix(); m.renderOrder = 1; m.name = 'terrain_' + cx + '_' + cz;
+      m.onBeforeRender = () => { U.uYB.value = W.yBase || 0; };
       group.add(m); chunks++;
     }
     W.terrainStats = { chunks, ms: performance.now() - t0 };
@@ -352,7 +373,7 @@
   'use strict';
   const T = THREE, V = window.Village, W = V && V.World;
   if (!W || !W.on) return;
-  const CULL_DIST = 235, CULL_TERRAIN = 470;     // terrain stays longer: its far edge would show the sky dome's dark underside
+  const CULL_DIST = 205, CULL_TERRAIN = 470;     // terrain stays longer: its far edge would show the sky dome's dark underside
   let list = [], t = 0, off = false;
   W.registerCull = function (group) {
     list = [];
@@ -362,14 +383,21 @@
       if (!(n.startsWith('terrain_') || n.startsWith('river_') || n.startsWith('lake_') || n.startsWith('vb_') || n.startsWith('vi_'))) return;
       if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
       const bs = o.geometry.boundingSphere;
-      list.push({ m: o, x: bs.center.x, z: bs.center.z, r: bs.radius, d: n.startsWith('terrain_') || n.startsWith('river_') || n.startsWith('lake_') ? CULL_TERRAIN : CULL_DIST });
+      // forest.js giants come as a full copy (lod 2) and a cheap copy (lod 1): one of them per chunk by distance
+      const lod = /^vi_(giant|greatpine)L/.test(n) ? 1 : /^vi_(giant|greatpine)d/.test(n) ? 2 : 0;
+      list.push({ m: o, lod, x: bs.center.x, z: bs.center.z, r: bs.radius, d: n.startsWith('terrain_') || n.startsWith('river_') || n.startsWith('lake_') ? CULL_TERRAIN : CULL_DIST });
     });
     W.cullCount = list.length;
   };
   W.cull = function (p, dt) {
     if (off || !p) return;
     t -= dt || 0.016; if (t > 0) return; t = 0.2;
-    for (const e of list) { const dx = e.x - p.x, dz = e.z - p.z; e.m.visible = Math.hypot(dx, dz) - e.r < e.d; }
+    const LD = (V.Forest && V.Forest.LOD_DIST) || 58;
+    for (const e of list) {
+      const dx = e.x - p.x, dz = e.z - p.z, d = Math.hypot(dx, dz);
+      // lod 2 = full copy (chunk centre inside LD), lod 1 = cheap copy (outside): never both, no double draw
+      e.m.visible = d - e.r < e.d && (e.lod === 0 || (e.lod === 2 ? d < LD : d >= LD));
+    }
   };
-  W.cullOff = function (on) { off = !!on; if (off) for (const e of list) e.m.visible = true; else t = 0; };
+  W.cullOff = function (on) { off = !!on; if (off) for (const e of list) e.m.visible = e.lod !== 1; else t = 0; };
 })();

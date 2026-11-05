@@ -9,6 +9,7 @@ const out = process.argv[2] || 'shots/world/play';
 const visit = process.argv.slice(3);
 fs.mkdirSync(out, { recursive: true });
 const base = pathToFileURL(path.resolve(import.meta.dirname, '..', 'index.html')).href;
+const EXTRA = process.env.WQ ? '&' + process.env.WQ : '';   // e.g. WQ=giants=0 (compare reachability without the ancient trees)
 const browser = await chromium.launch({ channel: 'msedge', args: ['--ignore-gpu-blocklist', '--enable-unsafe-swiftshader', '--use-angle=d3d11'] });
 let errs = 0;
 const log = (...a) => console.log(...a);
@@ -18,7 +19,7 @@ try {
   page.on('pageerror', (e) => { errs++; log('pageerror: ' + e.message); });
   page.on('console', (m) => { if (m.type() === 'error') { errs++; log('console.error: ' + m.text().slice(0, 400)); } });
   const t0 = Date.now();
-  await page.goto(base + '?cls=warrior&spawn=gate_outer', { waitUntil: 'load' });
+  await page.goto(base + '?cls=warrior&spawn=gate_outer' + EXTRA, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__village && window.__knight && window.__creatures, null, { timeout: 240000 });
   await page.waitForTimeout(2500);
   log('load+build ms', Date.now() - t0);

@@ -241,10 +241,12 @@
           const L = ARROW_LEN * P.S.scale;
           _a.copy(P.prev).addScaledVector(P.dir, L); _b.copy(P.pos).addScaledVector(P.dir, L);   // the head this frame
           let hit = hooks.hitTest ? hooks.hitTest(_a, _b, P) : null;
-          if (_b.y < 0.02 && _a.y >= 0.02) {                         // walkable ground is the y = 0 plane
-            const f = (_a.y - 0.02) / Math.max(1e-6, _a.y - _b.y), gp = new V3().lerpVectors(_a, _b, f); gp.y = 0;
+          // walkable ground: the y = 0 plane, or the terrain when the host sets AV.groundY(x, z) (open world, vertical frame)
+          const gA = AV.groundY ? AV.groundY(_a.x, _a.z) : 0, gB = AV.groundY ? AV.groundY(_b.x, _b.z) : 0;
+          if (_b.y < gB + 0.02 && _a.y >= gA + 0.02) {
+            const da = _a.y - gA - 0.02, db = _b.y - gB - 0.02, f = da / Math.max(1e-6, da - db), gp = new V3().lerpVectors(_a, _b, f); gp.y = AV.groundY ? AV.groundY(gp.x, gp.z) : 0;
             if (!hit || hit.point.distanceToSquared(_a) > gp.distanceToSquared(_a)) hit = { point: gp, surface: 'ground' };
-          } else if (_b.y < 0.02 && !hit) hit = { point: _b.clone().setY(0), surface: 'ground' };
+          } else if (_b.y < gB + 0.02 && !hit) hit = { point: _b.clone().setY(gB), surface: 'ground' };
           if (hit && resolveHit(P, hit, i)) continue;
         }
         if (P.life > P.maxLife) despawn(P, i);

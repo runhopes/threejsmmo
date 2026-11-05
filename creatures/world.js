@@ -23,6 +23,8 @@
 
   function create(opts) {
     const scene = opts.scene, camera = opts.camera;
+    // ground height under a point in the scene frame (vertical frame: world/layout.js W.frameY; 0 on a flat world / the showcase pages)
+    const groundY = opts.groundY || ((x, z) => { const W = global.Village && global.Village.World; return W && W.on && W.frameY ? W.frameY(x, z) : 0; });
     // authority: a provided one (e.g. a networked mirror), the in-page server behind a latency loopback (?net=loopback),
     // or the local CreatureSim (single player / listen server)
     let authority = opts.authority, server = null;
@@ -113,9 +115,10 @@
         const op = (u < a.active[0] ? 0.16 + 0.12 * grow + 0.08 * pulse : 0.45 * Math.max(0, 1 - (u - a.active[0]) / 0.1));
         t.m.material.opacity = op; if (t.edge) t.edge.material.opacity = Math.min(0.9, op * 2.4);
         const yaw = rec.yaw;
-        if (k === 'ring') { t.m.position.set(rec.x, 0.04, rec.z); t.m.scale.setScalar(t.R * (0.35 + 0.65 * grow)); }
-        else if (k === 'cone') { t.m.position.set(rec.x, 0.04, rec.z); t.m.rotation.set(-Math.PI / 2, 0, yaw + Math.PI); t.m.scale.setScalar(t.R * (0.4 + 0.6 * grow)); }   // +pi: local +Y -> creature forward
-        else { t.m.position.set(rec.x, 0.04, rec.z); t.m.rotation.set(-Math.PI / 2, 0, yaw + Math.PI); t.m.scale.set(rec.D.radius * 2.2, a.lunge * grow + 1, 1); }
+        const ty = groundY(rec.x, rec.z) + 0.04;
+        if (k === 'ring') { t.m.position.set(rec.x, ty, rec.z); t.m.scale.setScalar(t.R * (0.35 + 0.65 * grow)); }
+        else if (k === 'cone') { t.m.position.set(rec.x, ty, rec.z); t.m.rotation.set(-Math.PI / 2, 0, yaw + Math.PI); t.m.scale.setScalar(t.R * (0.4 + 0.6 * grow)); }   // +pi: local +Y -> creature forward
+        else { t.m.position.set(rec.x, ty, rec.z); t.m.rotation.set(-Math.PI / 2, 0, yaw + Math.PI); t.m.scale.set(rec.D.radius * 2.2, a.lunge * grow + 1, 1); }
       }
     }
 
@@ -205,9 +208,12 @@
         root.position.x = rec.x; root.position.z = rec.z;
         root.rotation.y += angD(rec.yaw, root.rotation.y) * (1 - Math.exp(-dt * 16));
         if (v.anim && v.anim.setMode) v.anim.setMode(rec.alive ? (rec.speed > 0.05 ? rec.mode : null) : null, rec);
-        // corpse sinking / respawn rising (never pops)
-        if (e.sink >= 0) { e.sink += dt; root.position.y = -Math.min(1, Math.pow(e.sink / 2.2, 1.6)) * (e.D.height * 0.9 + 0.1); if (e.sink > 2.3) { release(e); views.delete(rec.id); continue; } }
-        else if (e.rise >= 0) { e.rise += dt; root.position.y = -0.25 * Math.max(0, 1 - e.rise / 0.6); if (e.rise > 0.6) { e.rise = -1; root.position.y = 0; } }
+        // corpse sinking / respawn rising (never pops). oy = offset from the ground; the rig (feet IK, ground fix) animates at a
+        // root height of oy (ground = world y 0), then the root is lifted onto the terrain: gy = frame height (vertical frame)
+        const gy = groundY(rec.x, rec.z); let oy = 0;
+        if (e.sink >= 0) { e.sink += dt; oy = -Math.min(1, Math.pow(e.sink / 2.2, 1.6)) * (e.D.height * 0.9 + 0.1); if (e.sink > 2.3) { release(e); views.delete(rec.id); continue; } }
+        else if (e.rise >= 0) { e.rise += dt; oy = -0.25 * Math.max(0, 1 - e.rise / 0.6); if (e.rise > 0.6) { e.rise = -1; oy = 0; } }
+        root.position.y = gy + oy;
         // cosmetic idle specials (client-only, never gameplay)
         if (rec.alive && !rec.act && rec.speed < 0.05 && !v.sm.cur) {
           e.idleT -= dt;
@@ -216,15 +222,18 @@
         }
         // visibility, distance LOD and update rate
         const d = _cam.distanceTo(root.position);
-        sphere.center.set(rec.x, e.D.height * 0.5, rec.z); sphere.radius = Math.max(e.D.height, e.D.radius * 2.2) + 0.3;
+        sphere.center.set(rec.x, gy + e.D.height * 0.5, rec.z); sphere.radius = Math.max(e.D.height, e.D.radius * 2.2) + 0.3;
         const inView = visible && frustum.intersectsSphere(sphere);
         root.visible = inView;
         v.setLOD(d > 15 ? 1 : 0); v.setShadow(d < 18);
         let q = !inView ? 0 : d < 18 ? 2 : d < 34 ? 1 : 1;
         const every = !inView ? 1 : d < 18 ? 1 : d < 34 ? 2 : 4;
         e.acc += dt;
-        if (q > 0 && e.lastQ === 0 && v.anim && v.anim.gait) v.anim.gait.reset(root);     // back on screen: re-plant feet
-        if ((frame + rec.id) % every === 0 || q === 0) { v.update(e.acc, q); e.acc = 0; }
+        const doUp = (frame + rec.id) % every === 0 || q === 0, doReset = q > 0 && e.lastQ === 0 && v.anim && v.anim.gait;
+        if (doUp || doReset) root.position.y = oy;                                          // rig works with the ground at world y = 0
+        if (doReset) v.anim.gait.reset(root);                                               // back on screen: re-plant feet
+        if (doUp) { v.update(e.acc, q); e.acc = 0; }
+        if (doUp || doReset) root.position.y = gy + oy;
         e.lastQ = q;
       }
       updateTelegraphs(dt);
@@ -236,7 +245,8 @@
       let best = null, bd = 1e9;
       for (const [id, e] of views) {
         const rec = authority.byId.get(id); if (!rec || !rec.alive || !e.view.root.visible) continue;
-        _a.set(rec.x, 0.05, rec.z); _b.set(rec.x, Math.max(e.D.height, 0.9), rec.z);
+        const gy = groundY(rec.x, rec.z);
+        _a.set(rec.x, gy + 0.05, rec.z); _b.set(rec.x, gy + Math.max(e.D.height, 0.9), rec.z);
         const d2 = raycaster.ray.distanceSqToSegment(_a, _b, _c1, _c2), r = e.D.radius + 0.3;     // generous: easy to click
         if (d2 < r * r) { const dc = _c1.distanceTo(raycaster.ray.origin); if (dc < bd) { bd = dc; best = rec; } }
       }

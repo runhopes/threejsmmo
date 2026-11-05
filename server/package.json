@@ -1,0 +1,15 @@
+{
+  "name": "tdsmoba-server",
+  "version": "1.0.0",
+  "description": "Atherion online sunucusu: hesaplar, karakterler, dünya senkronu, sohbet",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  }
+}

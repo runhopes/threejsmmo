@@ -15,12 +15,18 @@ const SET = {
   floor: ['forest_leaves_02', 3, 1.2, 1.05, 1.0],
   meadow: ['forrest_ground_01', 2, 1.25, 1.04, 1.0],
   mossrock: ['mossy_rock', 3, 1.15, 1.06, 1.0],
+  // ground layers of the open world (world/terrain.js): diffuse only (6th field = no normal map)
+  roaddirt: ['park_dirt', 2, 1.15, 1.04, 1.0, true],
+  trail: ['rocky_trail', 2, 1.1, 1.04, 1.0, true],
+  lgrass: ['leafy_grass', 2, 1.25, 1.05, 1.0, true],
+  sand: ['coast_sand_01', 2, 1.1, 1.05, 1.05, true],
 };
 const b = await chromium.launch({ channel: 'msedge' });
 const p = await b.newPage();
 const out = {};
-for (const [key, [id, kr, sat, con, bri]] of Object.entries(SET)) {
+for (const [key, [id, kr, sat, con, bri, noN]] of Object.entries(SET)) {
   for (const [suffix, isN] of [['Diffuse', false], ['nor_gl', true]]) {
+    if (isN && noN) continue;
     const f = path.join(src, `${id}_${suffix}.jpg`);
     if (!fs.existsSync(f)) { console.log('missing', f); continue; }
     const data = 'data:image/jpeg;base64,' + fs.readFileSync(f).toString('base64');

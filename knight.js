@@ -2384,6 +2384,7 @@
       this._secondary(dt, out, frozen);
       this._footLock(dt, out, !this.action);                   // locomotion: planted feet pinned to the ground
       this._footPlanner(dt, out, this._locoKey === 'idle');      // idle: feet stay put and STEP to their stance spots
+      if (this.groundAt) this._footGround(dt, out);              // walkable hills: each foot rides the terrain under it (optional hook)
       this._applyPose(out); this._applyIK(out);
       this._bladePhysics(dt, out, frozen);                     // inertia / whip / settle of the blade (re-solves the arm)
       this._updateBow(dt, out, frozen);                         // archer: string / limbs / arrows
@@ -2677,6 +2678,25 @@
         }
         const loc = this.root.worldToLocal(F.w.clone());
         p['f' + k + '.x'] = loc.x; p['f' + k + '.z'] = loc.z; p['f' + k + '.y'] = F.y; p['f' + k + '.r'] = F.yaw - ry; p['f' + k + '.p'] = pitch;
+      }
+    }
+
+    /* ==================== foot ground offset (walkable hills) ====================
+     * Optional hook: knight.groundAt(x, z) = ground height in the SAME frame as root.position.y (the open world keeps the
+     * hero at y = 0 and shifts the world, see village/scene.js). The rig plants feet in the character frame at y = 0 (flat
+     * ground); here each foot target is raised / lowered by the slope under it (smoothed, clamped to what the legs can do).
+     * Contact flags are fixed BEFORE the offset so footplant events / dust do not change. */
+    _footGround(dt, p) {
+      const g = this.groundAt, S = this._fgS || (this._fgS = { L: 0, R: 0 }), v = this._fgV || (this._fgV = new T.Vector3());
+      this.root.updateMatrixWorld(true);
+      const k1 = 1 - Math.exp(-dt * 20);
+      for (const k of FEET) {
+        const x = p['f' + k + '.x'], z = p['f' + k + '.z']; if (x === undefined) continue;
+        if (p['f' + k + '.c'] === undefined) p['f' + k + '.c'] = (p['f' + k + '.y'] || 0) < 0.004 ? 1 : 0;
+        v.set(x, 0, z).applyMatrix4(this.root.matrixWorld);
+        const dy = Math.max(-0.2, Math.min(0.28, g(v.x, v.z) - this.root.position.y));
+        S[k] += (dy - S[k]) * k1;
+        p['f' + k + '.y'] = (p['f' + k + '.y'] || 0) + S[k];
       }
     }
 

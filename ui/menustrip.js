@@ -33,6 +33,7 @@
     helm: [['b', 0, ['M-8.4 7.6L-8.4 -5.6Q-8.4 -11.6 0 -11.6Q8.4 -11.6 8.4 -5.6L8.4 7.6L0 11.4Z']], ['c', 2.3, ['M-6.4 -2.6L6.4 -2.6']], ['c', 2.1, ['M0 -2.6L0 7.2']], ['c', 1.1, ['M-8.4 -7.4L8.4 -7.4']]],
     spark: [['b', 0, ['M-3 -12L-1.2 -9L-1.2 4L-4.8 4L-4.8 -9Z', 'M-8.6 4L2.6 4L2.6 6.2L-8.6 6.2Z', 'M-4 6.2L-2 6.2L-2 9.8L-4 9.8Z', 'M-1.3 11A1.7 1.7 0 1 1 -4.7 11A1.7 1.7 0 1 1 -1.3 11Z', 'M5.8 -10L6.755 -5.355L11.4 -4.4L6.755 -3.445L5.8 1.2L4.845 -3.445L0.2 -4.4L4.845 -5.355Z']]],
     pouch: [['b', 0, ['M-6 -11.8L6 -11.8L3.4 -7.6L-3.4 -7.6Z', 'M-4.4 -6.4L4.4 -6.4L4.4 -4.6L-4.4 -4.6Z', 'M-3.6 -3.4Q-10.8 -0.4 -10.2 5Q-9.6 11.2 0 11.2Q9.6 11.2 10.2 5Q10.8 -0.4 3.6 -3.4Z']]],
+    door: [['b', 0, ['M-5.6 -11.4L5.6 -11.4L5.6 11L-5.6 11Z']], ['c', 1.8, ['M-4.2 -11.4L-4.2 11', 'M5.6 -3.4L2.2 -3.4']], ['b', 0, ['M4.6 1.6A1.5 1.5 0 1 1 1.6 1.6A1.5 1.5 0 1 1 4.6 1.6Z']]],   // kapı: kanat + tokmak
     map: [['b', 0, ['M-11.6 -7.5L-4.5 -10L-4.5 7.5L-11.6 10Z', 'M4.5 -7.5L11.6 -10L11.6 7.5L4.5 10Z']], ['d0.6', 0, ['M-3.1 -10L3.1 -7.5L3.1 10L-3.1 7.5Z']]],
     gear: [['b', 3.6, ['M5.4 0A5.4 5.4 0 1 1 -5.4 0A5.4 5.4 0 1 1 5.4 0Z']], ['b', 0, ['M5.844 -2.61L10.389 -2.106L10.389 2.106L5.844 2.61Z', 'M5.977 2.287L8.835 5.857L5.857 8.835L2.287 5.977Z', 'M2.61 5.844L2.106 10.389L-2.106 10.389L-2.61 5.844Z', 'M-2.287 5.977L-5.857 8.835L-8.835 5.857L-5.977 2.287Z', 'M-5.844 2.61L-10.389 2.106L-10.389 -2.106L-5.844 -2.61Z', 'M-5.977 -2.287L-8.835 -5.857L-5.857 -8.835L-2.287 -5.977Z', 'M-2.61 -5.844L-2.106 -10.389L2.106 -10.389L2.61 -5.844Z', 'M2.287 -5.977L5.857 -8.835L8.835 -5.857L5.977 -2.287Z']]],
   };
@@ -82,6 +83,7 @@
       { id: 'inv', label: 'Envanter', glyph: 'pouch' },
       { id: 'map', label: 'Harita', glyph: 'map' },
       { id: 'menu', label: 'Ayarlar', glyph: 'gear' },
+      { id: 'exit', label: 'Çıkış', glyph: 'door', action: () => { if (hud.onExit) hud.onExit(); } },
     ];
     // only windows that exist (the inventory part, when present, registers 'inv' before this part is created)
     const items = defs.filter((d) => d.id !== 'inv' || (hud.windows.reg && hud.windows.reg.inv));
@@ -106,7 +108,7 @@
       b.type = 'button'; b.tabIndex = -1; b.setAttribute('aria-label', it.label);
       b.style.cssText = 'position:absolute;top:0;pointer-events:auto;cursor:pointer';
       b.addEventListener('mousedown', (e) => e.preventDefault());
-      b.addEventListener('click', (e) => { e.stopPropagation(); it.pressT = 0; dirty = true; hud.windows.toggle(it.id); });
+      b.addEventListener('click', (e) => { e.stopPropagation(); it.pressT = 0; dirty = true; if (it.action) { it.action(); return; } hud.windows.toggle(it.id); });
       b.addEventListener('mouseenter', () => { it.hover = true; dirty = true; });
       b.addEventListener('mouseleave', () => { it.hover = false; dirty = true; });
       hud.tips.bind(b, () => '<div class="tt">' + esc(it.label) + '</div>' + (it.key ? '<div class="ts">Kısayol: ' + esc(it.key) + '</div>' : ''), 'top');

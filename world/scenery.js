@@ -6,8 +6,10 @@
  *    - scatters trees / bushes / rocks / grass per BIOME on the valley floor (colliders for everything solid),
  *      and cheap pines / far giants on the hill sides so the valleys read as enclosed
  *    - clears the creature camps, keeps roads open, paints the forest floor into the world control map
- *    - builds the landmarks: bridges, farm + windmill, rabbit warren, goblin camps + fort, wolf den, ruined watchtower,
- *      standing stones, dock, ice cave, signposts, the Ancient Tree
+ *    - builds the landmarks: bridges, great plaza, farm + windmill, rabbit warren, goblin camps + fort, wolf den, ruined
+ *      watchtower, standing stones, dock, holy-isle shrine, signposts, the Ancient Tree
+ *    - the floor has relief (hills + swells): I.add here lifts every relative-y instance onto the terrain; landmarks that
+ *      use the static Builder stand on dead-flat pads (W.pads in layout.js)
  * ===================================================================================================== */
 (function () {
   'use strict';
@@ -33,17 +35,6 @@
 
   /* ------------------------------------------------ extra instanced kinds ------------------------------------------------ */
   function defineKinds(I, M) {
-    // snow-dusted fir (frost valley, high slopes)
-    defineKind(I, 'snowfir', (Bd) => {
-      Bd.cyl(M.bark, 0, 0, 0, 0.28, 0.12, 2.4, 7, { color: 0x4e4036, caps: '' });
-      for (const [y, r, h] of [[1.5, 2.3, 3.2], [2.8, 1.9, 2.8], [4.0, 1.5, 2.5], [5.1, 1.1, 2.1], [6.1, 0.7, 1.7]]) {
-        const g = new T.ConeGeometry(r, h, 9, 2, true); g.translate(0, y + h / 2, 0);
-        const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const k = 1 + (V.hash2(i, (y * 10) | 0, 3) - 0.5) * 0.2; if (p.getY(i) < y + h * 0.1) p.setXYZ(i, p.getX(i) * k, p.getY(i) - 0.15 * V.hash2(i, 2, 5), p.getZ(i) * k); }
-        g.computeVertexNormals();
-        colors(g, (x, py, z) => { const t = smooth(y, y + h, py); return mix3([0.17, 0.3, 0.26], [0.88, 0.93, 1.0], 0.38 + 0.5 * t); });
-        Bd.geo(M.leaf, g, null, { color: 0xffffff });
-      }
-    }, 'main', true, 90);
     // dead tree (swamp, canyon)
     defineKind(I, 'deadtree', (Bd) => {
       const R = V.rng(61), c = 0x57514a;
@@ -126,16 +117,6 @@
       const f = new T.CircleGeometry(0.1, 6); f.rotateX(-PI / 2); f.translate(0.1, 0.02, 0.05); colors(f, () => [0.9, 0.7, 0.8]);
       Bd.geo(M.blade, f, null, { color: 0xffffff });
     }, 'detail', false, 70);
-    // cactus
-    defineKind(I, 'cactus', (Bd) => {
-      const c = 0x6a8a46;
-      Bd.cyl(M.leaf, 0, 0, 0, 0.36, 0.3, 3.2, 8, { color: c });
-      Bd.cyl(M.leaf, 0, 3.2, 0, 0.3, 0.02, 0.35, 8, { color: c, caps: '' });
-      for (const [s, y, up] of [[1, 1.4, 1.1], [-1, 1.9, 0.9]]) {
-        Bd.beam(M.leaf, v3(0.2 * s, y, 0), v3(0.95 * s, y, 0), 0.34, 0.34, { color: c });
-        Bd.cyl(M.leaf, 0.95 * s, y - 0.17, 0, 0.17, 0.14, up, 7, { color: c });
-      }
-    }, 'main', true, 100);
     // totem pole (goblin camps)
     defineKind(I, 'totem', (Bd) => {
       Bd.cyl(M.wood, 0, 0, 0, 0.22, 0.2, 3.6, 8, { color: 0x4f3d2e });
@@ -185,27 +166,28 @@
   /* ------------------------------------------------ biome tables ------------------------------------------------ */
   // densities are per m2 on the valley floor; clumping noise multiplies them (groves / clearings)
   const BI = {
-    meadow:   { t: 0.0010, trees: ['oakF', 'lindenF'], b: 0.004, r: 0.0007, tuft: 0.34, fl: 0.12, hillTrees: ['pine', 'oakF'], hill: 0.5 },
-    warren:   { t: 0.0006, trees: ['oakF', 'lindenF'], b: 0.0035, r: 0.0005, tuft: 0.34, fl: 0.22, hillTrees: ['oakF', 'lindenF'], hill: 0.45 },
-    creek:    { t: 0.0016, trees: ['lindenF', 'oakF'], giant: 0.0008, b: 0.0055, r: 0.0008, tuft: 0.32, fl: 0.14, hillTrees: ['giantFar', 'pine'], hill: 0.7 },
-    wolfwood: { giant: 0.0034, t: 0.0007, trees: ['pine', 'oakF'], b: 0.003, r: 0.0008, tuft: 0.15, fern: 0.0026, shroom: 0.0003, log: 0.0004, moss: 0.0006, hillTrees: ['giantFar', 'pine'], hill: 0.95 },
-    hills:    { t: 0.0004, trees: ['oakF', 'pine'], b: 0.002, r: 0.0024, tuft: 0.24, fl: 0.06, hillTrees: ['pine', 'oakF'], hill: 0.4 },
-    marsh:    { dead: 0.0013, giant: 0.0003, b: 0.0042, r: 0.0005, tuft: 0.14, fern: 0.0012, shroom: 0.0007, moss: 0.0004, reed: 0.0013, hillTrees: ['pine', 'deadtree'], hill: 0.35 },
-    canyon:   { spire: 0.0011, r: 0.0028, cactus: 0.0007, tuft: 0.035, dead: 0.0003, b: 0.0008, hillTrees: [], hill: 0 },
-    shadow:   { giant: 0.0047, t: 0.0004, trees: ['pine'], fern: 0.0042, shroom: 0.001, log: 0.0007, moss: 0.0009, b: 0.0025, r: 0.0006, tuft: 0.1, hillTrees: ['giantFar', 'pine'], hill: 1.0 },
-    frost:    { fir: 0.0017, r: 0.0023, spire: 0.0004, tuft: 0.02, hillTrees: ['snowfir'], hill: 0.75 },
+    meadow:   { giant: 0.0005, t: 0.0010, trees: ['oakF', 'lindenF'], b: 0.004, r: 0.0007, tuft: 0.34, fl: 0.12, hillTrees: ['pine', 'oakF'], hill: 0.5 },
+    warren:   { giant: 0.0005, t: 0.0006, trees: ['oakF', 'lindenF'], b: 0.0035, r: 0.0005, tuft: 0.34, fl: 0.22, hillTrees: ['oakF', 'lindenF'], hill: 0.45 },
+    creek:    { t: 0.0016, trees: ['lindenF', 'oakF'], giant: 0.0030, b: 0.0055, r: 0.0008, tuft: 0.32, fl: 0.14, hillTrees: ['giantFar', 'pine'], hill: 0.7 },
+    wolfwood: { giant: 0.0058, t: 0.0011, trees: ['greatpine', 'greatpine', 'oakF'], b: 0.003, r: 0.0008, tuft: 0.15, fern: 0.0026, shroom: 0.0003, log: 0.0004, moss: 0.0006, hillTrees: ['giantFar', 'pine'], hill: 0.95 },
+    hills:    { giant: 0.0024, t: 0.0014, trees: ['greatpine', 'greatpine', 'oakF'], b: 0.002, r: 0.0024, tuft: 0.24, fl: 0.06, hillTrees: ['pine', 'oakF'], hill: 0.4 },
+    marsh:    { dead: 0.0013, giant: 0.0009, b: 0.0042, r: 0.0005, tuft: 0.14, fern: 0.0012, shroom: 0.0007, moss: 0.0004, reed: 0.0013, hillTrees: ['pine', 'deadtree'], hill: 0.35 },
+    shadow:   { giant: 0.0085, t: 0.0010, trees: ['greatpine'], fern: 0.0042, shroom: 0.001, log: 0.0007, moss: 0.0009, b: 0.0025, r: 0.0006, tuft: 0.1, hillTrees: ['giantFar', 'pine'], hill: 1.0 },
   };
   // the first pass looked empty from the game camera: scale the authored densities up
-  const MUL = { t: 2.0, b: 2.1, r: 1.8, tuft: 1.9, fir: 2.6, dead: 1.8, spire: 1.8, cactus: 2.2, fern: 1.5, shroom: 1.6, log: 1.3, moss: 1.4, giant: 1.12 };
+  // ?giants=<k>: density multiplier of the ancient trees (0.5 = half as many, for slow GPUs); phones default to 0.6
+  const GIANT_K = Math.max(0, Math.min(2, +(new URLSearchParams(location.search).get('giants') || (window.__MOBILE ? 0.6 : 1))));
+  const MUL = { t: 2.0, b: 2.1, r: 1.8, tuft: 1.9, fir: 2.6, dead: 1.8, spire: 1.8, cactus: 2.2, fern: 1.5, shroom: 1.6, log: 1.3, moss: 1.4, giant: 1.12 * GIANT_K };
   for (const k in BI) for (const f in MUL) if (BI[k][f]) BI[k][f] = Math.min(f === 'tuft' ? 0.9 : 1, BI[k][f] * MUL[f]);
-  const ROCK_TINT = { canyon: [0xd9835a, 0xc8714a, 0xe39a6c], frost: [0xdde8f2, 0xc8d8e8, 0xe8f0f8], hills: [0xcfc7b4, 0xc2bba8, 0xd8d0bc], default: [0xbdb7ab, 0xaaa597, 0xc8c2b4] };
+  const ROCK_TINT = { hills: [0xcfc7b4, 0xc2bba8, 0xd8d0bc], default: [0xbdb7ab, 0xaaa597, 0xc8c2b4] };
 
   /* ------------------------------------------------ populate ------------------------------------------------ */
   W.populate = function (ctx) {
     const t0 = performance.now();
-    const { I, B, M, col, R, FOREST } = ctx;
+    const { B, M, col, R, FOREST } = ctx;
+    const Iraw = ctx.I;                       // raw instancer: callers pass ABSOLUTE heights (hill sides, water)
     W.build(); W.buildMaps();
-    defineKinds(I, M);
+    defineKinds(Iraw, M);
     const zoneOf = zoneGrid();
     const placed = makePlacement(R, FOREST);
     const stats = { giants: 0, trees: 0, hill: 0, bushes: 0, rocks: 0, tufts: 0, reeds: 0, props: 0 };
@@ -218,14 +200,17 @@
     const noise = (x, z, s, o) => V.ntab(x + (o || 0), z - (o || 0) * 0.7, s);
     const clump = (x, z) => 0.25 + 1.5 * smooth(0.36, 0.72, noise(x, z, 0.33));
     const yAt = (x, z) => W.heightAt(x, z);
+    const slopeAt = (x, z) => Math.hypot(W.heightAt(x + 3, z) - W.heightAt(x - 3, z), W.heightAt(x, z + 3) - W.heightAt(x, z - 3)) / 6;
+    /* the walkable floor has relief now: everything placed on it with a RELATIVE y (0 = ground) is lifted onto the terrain */
+    const I = Object.create(Iraw); I.add = (k, x, y, z, ry, sc, tint) => Iraw.add(k, x, y + yAt(x, z), z, ry, sc, tint);
     const tintTree = [0xffffff, 0xf2fff4, 0xe8f6ff, 0xfff6e0, 0xeae6ff, 0xffffff];
 
     const solid = (x, z, r, top, tag) => col.circle(x, z, r, top === undefined ? 6 : top, tag || 'tree');
     const plantGiant = (x, z, kind, sc, onFloor) => {
       const info = fi(kind); if (!info) return;
       const ry = R() * TAU, cs = Math.cos(ry), sn = Math.sin(ry);
-      I.add(kind, x, onFloor ? 0 : yAt(x, z) - 0.2, z, ry, sc, tintTree[Math.floor(R() * tintTree.length)]);
-      placed.add(x, z, info.r0 * 2.6 * sc + 1.2);
+      FOREST.addGiant(Iraw, kind, x, yAt(x, z) - (onFloor ? 0.1 + Math.min(1.4, 4 * slopeAt(x, z)) : 0.2), z, ry, sc, tintTree[Math.floor(R() * tintTree.length)]);
+      placed.add(x, z, info.r0 * 1.9 * sc + 1.0);
       if (onFloor) {
         const Wp = (lx, lz) => [x + (lx * cs + lz * sn) * sc, z + (-lx * sn + lz * cs) * sc];
         solid(x, z, info.r0 * 1.75 * sc, 40);
@@ -252,17 +237,25 @@
       const jx = x + R() * STEP, jz = z + R() * STEP;
       if (!inside(jx, jz, 2.4)) continue;
       if (jx > -104 && jx < 104 && jz > -104 && jz < 146) continue;         // the village band is dressed by the village
-      const zn = zoneOf(jx, jz), bi = BI[zn.biome], rd = roadD(jx, jz), cl = clump(jx, jz), tall = rd > 3.2 && campClear(jx, jz, 2.5, 1);
+      const zn = zoneOf(jx, jz), bi = BI[zn.biome], rd = roadD(jx, jz), cl = clump(jx, jz);
+      // the starter area stays open: no trees on the great plaza, the gate road or the ring of meadow round them
+      const calm = Math.hypot(jx, jz - 180) < 62 || (Math.abs(jx) < 30 && jz > 100 && jz < 215), tall = rd > 3.2 && !calm && campClear(jx, jz, 2.5, 1);
       if (!bi) continue;
       if (R() < 0.06 && rd > 1.2) { const tt = ROCK_TINT[zn.biome] || ROCK_TINT.default; I.add('rock', jx, -0.04, jz, R() * 6, 0.16 + R() * 0.3, tt[Math.floor(R() * tt.length)]); }
       let u = R(), acc = 0;
       const pick = (p) => { acc += p * STEP * STEP; return u < acc; };
-      if (tall && bi.giant && pick(bi.giant * cl)) {
-        const kind = 'giant' + Math.floor(R() * 2), sc = 0.85 + R() * 0.4, info = fi(kind);
-        if (info && placed.free(jx, jz, info.r0 * 2.6 * sc + 1.2) && placed.free(jx, jz, 0)) plantGiant(jx, jz, kind, sc, true);
+      if (tall && bi.giant && FOREST && pick(bi.giant * cl)) {
+        const kind = 'giant' + Math.floor(R() * FOREST.GIANT_COUNT), sc = 0.9 + R() * 0.6, info = fi(kind);
+        if (info && placed.free(jx, jz, info.r0 * 1.9 * sc + 1.0) && placed.free(jx, jz, 0)) plantGiant(jx, jz, kind, sc, true);
         continue;
       }
-      if (tall && bi.t && pick(bi.t * cl)) { const kind = bi.trees[Math.floor(R() * bi.trees.length)]; if (placed.free(jx, jz, 3.4)) plantTree(jx, jz, kind, 0.85 + R() * 0.35); continue; }
+      if (tall && bi.t && pick(bi.t * cl)) {
+        let kind = bi.trees[Math.floor(R() * bi.trees.length)];
+        if (kind === 'greatpine' && !FOREST) kind = 'pine';   // ?atmo=0: old look
+        if (kind === 'greatpine') { const k2 = 'greatpine' + Math.floor(R() * FOREST.PINE_COUNT), sc = 0.85 + R() * 0.55, info = fi(k2); if (info && placed.free(jx, jz, info.r0 * 1.9 * sc + 1.0)) plantGiant(jx, jz, k2, sc, true); }
+        else if (placed.free(jx, jz, 3.4)) plantTree(jx, jz, kind, 0.85 + R() * 0.35);
+        continue;
+      }
       if (tall && bi.fir && pick(bi.fir * cl)) { if (placed.free(jx, jz, 3.0)) plantTree(jx, jz, 'snowfir', 0.9 + R() * 0.4); continue; }
       if (tall && bi.dead && pick(bi.dead * cl)) { if (placed.free(jx, jz, 3)) { I.add('deadtree', jx, 0, jz, R() * TAU, 0.8 + R() * 0.6, 0xffffff); solid(jx, jz, 0.4, 5); placed.add(jx, jz, 2.5); stats.trees++; } continue; }
       if (tall && bi.spire && pick(bi.spire * cl)) {
@@ -273,10 +266,10 @@
       if (tall && bi.cactus && pick(bi.cactus * cl)) { if (placed.free(jx, jz, 2)) { I.add('cactus', jx, 0, jz, R() * TAU, 0.8 + R() * 0.6, 0xffffff); solid(jx, jz, 0.5, 3); placed.add(jx, jz, 1.6); } continue; }
       if (bi.r && rd > 2.2 && campClear(jx, jz, 0, 0.55) && pick(bi.r * (0.5 + cl * 0.6))) { const sc = 0.7 + Math.pow(R(), 2.2) * 2.4; if (placed.free(jx, jz, sc * 0.7)) plantRock(jx, jz, sc, zn); continue; }
       if (bi.b && rd > 1.6 && campClear(jx, jz, 0, 0.5) && pick(bi.b * cl)) { I.add('bush', jx, 0, jz, R() * 6, 0.7 + R() * 0.7, [0xffffff, 0xe8f0d8, 0xf0ecd8][Math.floor(R() * 3)]); if (R() < 0.35) solid(jx, jz, 0.5, 1.2, 'bush'); stats.bushes++; continue; }
-      if (bi.fern && pick(bi.fern * cl)) { I.add('fern', jx, 0, jz, R() * TAU, 0.8 + R() * 0.7, [0xffffff, 0xe6f6e0, 0xf4f0d8][Math.floor(R() * 3)]); continue; }
-      if (bi.shroom && rd > 3 && pick(bi.shroom * cl)) { const hue = R() < 0.6 ? 0x5fe8d8 : R() < 0.5 ? 0x9a8cff : 0x8cf07a; I.add('shrooms', jx, 0, jz, R() * TAU, 0.9 + R() * 0.8, hue); glow.push([jx, 0.35, jz, 0, hue]); continue; }
-      if (bi.moss && rd > 3 && pick(bi.moss * cl)) { const sc = 0.8 + R() * 1.1; if (placed.free(jx, jz, sc * 1.4)) { I.add('mossboulder', jx, -0.1, jz, R() * TAU, sc, 0xffffff); solid(jx, jz, sc * 1.15, sc * 0.9, 'rock'); placed.add(jx, jz, sc * 1.4); } continue; }
-      if (bi.log && rd > 3.5 && campClear(jx, jz, 4, 1) && pick(bi.log * cl)) {
+      if (bi.fern && FOREST && pick(bi.fern * cl)) { I.add('fern', jx, 0, jz, R() * TAU, 0.8 + R() * 0.7, [0xffffff, 0xe6f6e0, 0xf4f0d8][Math.floor(R() * 3)]); continue; }
+      if (bi.shroom && FOREST && rd > 3 && pick(bi.shroom * cl)) { const hue = R() < 0.6 ? 0x5fe8d8 : R() < 0.5 ? 0x9a8cff : 0x8cf07a; I.add('shrooms', jx, 0, jz, R() * TAU, 0.9 + R() * 0.8, hue); glow.push([jx, yAt(jx, jz) + 0.35, jz, 0, hue]); continue; }
+      if (bi.moss && FOREST && rd > 3 && pick(bi.moss * cl)) { const sc = 0.8 + R() * 1.1; if (placed.free(jx, jz, sc * 1.4)) { I.add('mossboulder', jx, -0.1, jz, R() * TAU, sc, 0xffffff); solid(jx, jz, sc * 1.15, sc * 0.9, 'rock'); placed.add(jx, jz, sc * 1.4); } continue; }
+      if (bi.log && FOREST && rd > 3.5 && campClear(jx, jz, 4, 1) && pick(bi.log * cl)) {
         const ry = R() * TAU, ok = [-3.8, 0, 3.8].every((s) => inside(jx + Math.cos(ry) * s, jz - Math.sin(ry) * s, 2) && placed.free(jx + Math.cos(ry) * s, jz - Math.sin(ry) * s, 0.8));
         if (ok) { I.add('mosslog', jx, -0.12, jz, ry, 1, 0xffffff); for (const s of [-3.2, -1.1, 1.1, 3.2]) { col.circle(jx + Math.cos(ry) * s, jz - Math.sin(ry) * s, 0.7, 1.2, 'log'); placed.add(jx + Math.cos(ry) * s, jz - Math.sin(ry) * s, 1); } }
       }
@@ -297,7 +290,6 @@
     }
 
     /* --- 3) hill sides: pines, far giants, snow firs (backdrop; no colliders - nobody can get there) --- */
-    const slopeAt = (x, z) => Math.hypot(W.heightAt(x + 3, z) - W.heightAt(x - 3, z), W.heightAt(x, z + 3) - W.heightAt(x, z - 3)) / 6;
     for (let z = bnd.minZ; z < bnd.maxZ; z += 6) for (let x = bnd.minX; x < bnd.maxX; x += 6) {
       const jx = x + R() * 6, jz = z + R() * 6, s = W.sdAt(jx, jz);
       if (s < 3 || s > 150) continue;
@@ -309,9 +301,10 @@
       if (R() > dens * 0.7) continue;
       const kind = bi.hillTrees[Math.floor(R() * bi.hillTrees.length)];
       const far = kind === 'giantFar';
-      if (!placed.free(jx, jz, far ? 8 : 2.2)) continue;
-      if (far) { I.add('giantFar', jx, hy - 0.3, jz, R() * TAU, 0.9 + R() * 0.5, tintTree[Math.floor(R() * tintTree.length)]); placed.add(jx, jz, 9); }
-      else { I.add(kind, jx, hy - 0.15, jz, R() * TAU, 0.9 + R() * 0.7, kind === 'deadtree' ? 0xffffff : tintTree[Math.floor(R() * tintTree.length)]); placed.add(jx, jz, 2.2); }
+      if (far && !FOREST) continue;   // ?atmo=0: no giant kinds
+      if (!placed.free(jx, jz, far ? 11 : 2.2)) continue;
+      if (far) { Iraw.add('giantFar', jx, hy - 0.3, jz, R() * TAU, 1.3 + R() * 0.8, tintTree[Math.floor(R() * tintTree.length)]); placed.add(jx, jz, 12); }
+      else { Iraw.add(kind, jx, hy - 0.15, jz, R() * TAU, (kind === 'pine' ? 1.5 : 0.9) + R() * 0.8, kind === 'deadtree' ? 0xffffff : tintTree[Math.floor(R() * tintTree.length)]); placed.add(jx, jz, 2.2); }
       stats.hill++;
     }
     // island hills carry a few trees too
@@ -319,7 +312,7 @@
       const a = R() * TAU, r = Math.sqrt(R()) * isl.r * 0.8, x = isl.x + Math.cos(a) * r, z = isl.z + Math.sin(a) * r, zn = zoneOf(x, z), bi = BI[zn.biome];
       if (!bi || !bi.hillTrees.length || isl.tower) continue;
       const kind = bi.hillTrees[Math.floor(R() * bi.hillTrees.length)]; if (kind === 'giantFar' || kind === 'deadtree') continue;
-      I.add(kind === 'snowfir' ? 'snowfir' : kind, x, yAt(x, z) - 0.15, z, R() * TAU, 0.7 + R() * 0.5, 0xffffff);
+      Iraw.add(kind, x, yAt(x, z) - 0.15, z, R() * TAU, 0.7 + R() * 0.5, 0xffffff);
     }
 
     /* --- 4) water edges: reeds along rivers / ponds, lily pads --- */
@@ -339,7 +332,7 @@
       }
       if (swamp || L.kind === 'lake') for (let k = 0; k < Math.min(90, L.rx * L.rz / 40); k++) {
         const a = R() * TAU, r = Math.sqrt(R()) * 0.82, cs = Math.cos(L.rot), sn = Math.sin(L.rot), lx = Math.cos(a) * L.rx * r, lz = Math.sin(a) * L.rz * r;
-        I.add('lily', L.x + lx * cs - lz * sn, W.WATER_Y + 0.04, L.z + lx * sn + lz * cs, R() * 6, 0.7 + R() * 0.7, 0xffffff);
+        Iraw.add('lily', L.x + lx * cs - lz * sn, W.WATER_Y + 0.04, L.z + lx * sn + lz * cs, R() * 6, 0.7 + R() * 0.7, 0xffffff);
       }
     }
 
@@ -354,7 +347,7 @@
 
   /* ------------------------------------------------ landmarks ------------------------------------------------ */
   function landmarks(c) {
-    const { I, B, M, col, R, solid, glow, stats, yAt } = c;
+    const { I, B, M, col, R, solid, glow, stats, yAt, FOREST } = c;
     const ry2 = (dx, dz) => Math.atan2(dx, dz);
     const post = (x, y0, z, h, w, color) => B.boxY(M.wood, x, y0, z, w || 0.16, h, w || 0.16, { color: color || 0x5a4636 });
 
@@ -378,13 +371,12 @@
 
     /* signposts at the forks */
     const sign = (x, z, ry, arms) => {
-      B.push(x, 0, z, ry); post(0, 0, 0, 2.7, 0.2);
+      B.push(x, yAt(x, z), z, ry); post(0, 0, 0, 2.7, 0.2);
       arms.forEach((a, i) => { B.box(M.planks, a.dir * 0.55, 2.35 - i * 0.5, 0, 1.3, 0.34, 0.07, { color: 0x7d6446, ry: a.dir * 0.0 }); B.box(M.dark, a.dir * 1.18, 2.35 - i * 0.5, 0, 0.18, 0.22, 0.08, { color: 0x3a2e24 }); });
       B.pop(); col.circle(x, z, 0.3, 3, 'props');
     };
-    sign(7, 574, 0.2, [{ dir: -1 }, { dir: 1 }, { dir: 1 }]);
-    sign(6, 122, 0, [{ dir: -1 }, { dir: 1 }]);
-    sign(-9, 1250, 0.4, [{ dir: -1 }, { dir: 1 }]);
+    sign(14, 150, 0.1, [{ dir: -1 }, { dir: 1 }]);                                           // the gate road
+    for (const [px, py, ry, arms] of [[84, 366, 0.5, [{ dir: -1 }, { dir: 1 }]], [188, 230, 0.2, [{ dir: -1 }, { dir: 1 }, { dir: 1 }]], [154, 436, 0.1, [{ dir: -1 }, { dir: 1 }]], [338, 350, 0.3, [{ dir: -1 }, { dir: 1 }]], [78, 236, 0.6, [{ dir: -1 }, { dir: 1 }]]]) { const q = W.P(px, py); sign(q[0] + 6, q[1], ry, arms); }
 
     /* helper: a simple pitched-roof building (w across x, d along z), door on +z */
     const building = (x, z, ry, w, d, h, wallMat, wallCol, roofCol) => {
@@ -450,12 +442,12 @@
     {
       const [hx, hz] = W.sites.warrenHeart;
       I.add('burrow', hx, -0.05, hz + 9, 0, 2.1, 0xffffff); solid(hx, hz + 9, 2.6, 1.5, 'rock');
-      for (const [gx, gz, w, d] of [[150, 262, 14, 9], [188, 236, 12, 8], [248, 330, 10, 12]]) {
+      for (const [gx, gz, w, d] of [[hx - 46, hz + 32, 14, 9], [hx + 30, hz - 48, 12, 8], [hx + 62, hz + 30, 10, 12]]) {
         for (let x = -w / 2; x < w / 2; x += 1.0) for (let z = -d / 2; z < d / 2; z += 0.95) if (c.inside(gx + x, gz + z, 2)) I.add('carrot', gx + x, 0, gz + z, R() * 6, 0.9 + R() * 0.3, 0xffffff);
         V.Props.fence(B, M, col, [[gx - w / 2 - 1, gz - d / 2 - 1], [gx + w / 2 + 1, gz - d / 2 - 1], [gx + w / 2 + 1, gz + d / 2 + 1], [gx - w / 2 - 1, gz + d / 2 + 1], [gx - w / 2 - 1, gz - d / 2 - 1]], { kind: 'picket', h: 0.7, seed: 21 + (gx | 0), gaps: [[0, 3]] });
       }
       // giant carrot signpost at the warren entrance
-      const sx = 168, sz = 214;
+      const sx = 178, sz = 66;                                           // (a flat pad, see layout.js)
       post(sx, 0, sz, 2.4, 0.18); B.cyl(M.blade, sx, 2.4, sz, 0.45, 0.02, 1.5, 8, { color: 0xe0782a }); B.cyl(M.leaf, sx, 3.8, sz, 0.1, 0.5, 0.5, 6, { color: 0x4e8a34 }); col.circle(sx, sz, 0.35, 4, 'props');
     }
 
@@ -468,7 +460,7 @@
         if (!c.inside(x, z, 3)) continue;
         I.add('tent', x, 0, z, a + PI * 0.5, 0.9 + R() * 0.2, frost ? 0xaec4d8 : [0xffffff, 0xe8d0b0, 0xd8c0a0][k % 3]); solid(x, z, 1.9, 3, 'building'); stats.props++;
       }
-      I.add('campfire', cp.cx, 0, cp.cz, 0, 1, 0xffffff); col.circle(cp.cx, cp.cz, 0.8, 0.5, 'props'); glow.push([cp.cx, 0.8, cp.cz, 0, 0xff9a3a]);
+      I.add('campfire', cp.cx, 0, cp.cz, 0, 1, 0xffffff); col.circle(cp.cx, cp.cz, 0.8, 0.5, 'props'); glow.push([cp.cx, yAt(cp.cx, cp.cz) + 0.8, cp.cz, 0, 0xff9a3a]);
       I.add('totem', cp.cx + 3.2, 0, cp.cz - 4.2, 0.4, 1, 0xffffff); col.circle(cp.cx + 3.2, cp.cz - 4.2, 0.35, 4, 'props');
       for (let k = 0; k < 3; k++) { const a = R() * TAU, r = 2.5 + R() * 2.5; I.add(k % 2 ? 'crate' : 'barrel', cp.cx + Math.cos(a) * r, 0, cp.cz + Math.sin(a) * r, R() * 6, 1, 0xffffff); }
     }
@@ -545,38 +537,56 @@
       B.boxY(M.planks, 0, 0.0, 0, 2.6, 0.16, 18, { color: 0x8a6c4c });
       for (let s = 0; s <= 18; s += 3) for (const sx of [-1, 1]) B.boxY(M.wood, sx * 1.2, -1.4, s - 0.2, 0.2, 1.6, 0.2, { color: 0x4f3d2e });
       B.pop();
-      building(dx + 14, dz - 8, 0.4, 5, 6.5, 2.7, M.planks, 0x7d6446, 0x5a4a3c);
-      for (let k = 0; k < 3; k++) { I.add('barrel', dx + 8 + k * 0.9, 0, dz - 2, R() * 6, 1, 0xffffff); }
-    }
-
-    /* ice cave mouth at the end of the frost valley + glowing frost crystals */
-    {
-      const [ix, iz] = W.sites.icecave;
-      for (const s of [-1, 1]) { I.add('spire', ix + s * 7, -0.2, iz + 4, R() * 6, 2.6, 0xdde8f2); solid(ix + s * 7, iz + 4, 3.3, 40, 'rock'); }
-      B.box(M.rubble, ix, 10.2, iz + 4, 16, 2.4, 4.4, { color: 0xc8d8e8 }); B.box(M.dark, ix, 4, iz + 3, 11, 8.2, 1.2, { color: 0x080a0e });
-      for (let k = 0; k < 18; k++) {
-        const a = R() * TAU, r = 6 + R() * 16, x = ix + Math.cos(a) * r, z = iz + 8 + Math.sin(a) * r * 0.6, h = 0.8 + R() * 1.8; if (!c.inside(x, z, 1)) continue;
-        B.cyl(M.glass, x, 0, z, 0.22, 0.0, h, 5, { color: 0x9fd8ff, flat: true });
-      }
-      glow.push([ix, 2.5, iz + 7, 0, 0x7fd8ff]);
+      building(dx - 15, dz - 8, 0.4, 5, 6.5, 2.7, M.planks, 0x7d6446, 0x5a4a3c);
+      for (let k = 0; k < 3; k++) { I.add('barrel', dx - 8 - k * 0.9, 0, dz - 2, R() * 6, 1, 0xffffff); }
     }
 
     /* Ancient Tree */
     {
       const [tx, tz] = W.sites.titan;
-      I.add('titan', tx, -1.2, tz, 0.6, 1.0, 0xf4f6ff);
+      if (FOREST) I.add('titan', tx, -1.2, tz, 0.6, 1.0, 0xf4f6ff);   // (?atmo=0: no colossal tree)
       for (let k = 0; k < 30; k++) { const a = R() * TAU, r = 8 + R() * 20; glow.push([tx + Math.cos(a) * r, 0.3 + R() * 2.4, tz + Math.sin(a) * r, 1]); }
       for (let k = 0; k < 10; k++) { const a = k / 10 * TAU; solid(tx + Math.cos(a) * 6.4, tz + Math.sin(a) * 6.4, 2.8, 40, 'tree'); }
       solid(tx, tz, 5.2, 40, 'tree');
+    }
+
+    /* the great plaza: a round stone dais with a waystone obelisk and four lamp posts */
+    {
+      const [px, pz] = W.sites.plaza;
+      B.cyl(M.stone, px, 0, pz, 4.6, 4.2, 0.45, 20, { color: 0x9a9080 }); B.cyl(M.stone, px, 0.45, pz, 3.4, 3.2, 0.3, 20, { color: 0xa89e8c });
+      B.cyl(M.stone, px, 0.75, pz, 1.1, 0.7, 6.4, 8, { color: 0xb8ae9a, flat: true }); B.cyl(M.stone, px, 7.15, pz, 0.7, 0.0, 1.1, 8, { color: 0xc4baa6, flat: true, caps: '' });
+      B.box(M.glass, px, 5.2, pz + 0.72, 0.28, 0.9, 0.06, { color: 0x9fd8ff });
+      col.circle(px, pz, 4.4, 7, 'props'); glow.push([px, 5.2, pz + 1.2, 0, 0x9fd8ff]);
+      for (let k = 0; k < 4; k++) {
+        const a = k / 4 * TAU + PI / 4, x = px + Math.cos(a) * 11, z = pz + Math.sin(a) * 11;
+        post(x, 0, z, 2.6, 0.16); B.box(M.iron, x, 2.7, z, 0.36, 0.42, 0.36, { color: 0x2f2f31 }); B.box(M.ember, x, 2.7, z, 0.24, 0.3, 0.24, { color: 0xffffff });
+        col.circle(x, z, 0.3, 3, 'props'); glow.push([x, 2.7, z, 0, 0xffb060]);
+      }
+      stats.props += 6;
+    }
+
+    /* holy isle shrine: a ring of standing stones round an altar, blue light */
+    {
+      const [sx, sz] = W.sites.shrine;
+      for (let k = 0; k < 8; k++) {
+        const a = k / 8 * TAU, x = sx + Math.cos(a) * 9, z = sz + Math.sin(a) * 9, h = 3.6 + V.hash2(k, 5, 3) * 1.8;
+        if (!c.inside(x, z, 1)) continue;
+        B.push(x, 0, z, -a); B.boxY(M.rubble, 0, -0.1, 0, 1.5, h, 0.9, { color: 0xb8b0a0, top: [0.7, 0.6], rx: (V.hash2(k, 3, 7) - 0.5) * 0.06 }); B.pop();
+        col.circle(x, z, 0.9, h, 'rock');
+      }
+      B.cyl(M.stone, sx, 0, sz, 2.4, 2.2, 0.5, 14, { color: 0x8f8776 }); B.boxY(M.stone, sx, 0.5, sz, 1.6, 1.0, 1.0, { color: 0xa09886 });
+      col.circle(sx, sz, 1.8, 1.5, 'props'); glow.push([sx, 1.8, sz, 0, 0x7fd8ff]);
+      for (let k = 0; k < 14; k++) { const a = R() * TAU, r = 3 + R() * 13; glow.push([sx + Math.cos(a) * r, 0.4 + R() * 1.8, sz + Math.sin(a) * r, 1]); }
+      stats.props += 10;
     }
 
     /* camp lanterns along the main road: a post with an ember every ~140 m (cheap sense of a travelled road) */
     const main = W.roadLines.find((r) => r.id === 'main');
     if (main) for (let s = 6, acc = 0, last = 0; s < main.line.length; s++) {
       const p = main.line[s]; acc = p[2] - last; if (acc < 130) continue; last = p[2];
-      const x = p[0] + 3.6, z = p[1];
-      post(x, 0, z, 2.4, 0.14); B.box(M.iron, x, 2.5, z, 0.34, 0.4, 0.34, { color: 0x2f2f31 }); B.box(M.ember, x, 2.5, z, 0.22, 0.3, 0.22, { color: 0xffffff });
-      col.circle(x, z, 0.3, 3, 'props'); glow.push([x, 2.5, z, 0, 0xffb060]);
+      const x = p[0] + 3.6, z = p[1], gy = yAt(x, z);
+      post(x, gy, z, 2.4, 0.14); B.box(M.iron, x, gy + 2.5, z, 0.34, 0.4, 0.34, { color: 0x2f2f31 }); B.box(M.ember, x, gy + 2.5, z, 0.22, 0.3, 0.22, { color: 0xffffff });
+      col.circle(x, z, 0.3, 3, 'props'); glow.push([x, gy + 2.5, z, 0, 0xffb060]);
     }
   }
 })();

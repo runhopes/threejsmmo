@@ -1,19 +1,23 @@
 /* =====================================================================================================
- *  world/layout.js  -  the open world around Taskale: zones, valleys, rivers, lakes, roads, mob camps, landmarks
+ *  world/layout.js  -  the open world around Taskale (Metin2-style top-down map): zones, floor, relief, rivers, roads, camps
  *
- *  A WoW-style overworld for levels 1-18. Everything here is DATA + analytic fields (no three.js objects):
+ *  A Metin2-style overworld for levels 1-16: the castle in the middle, a great river wrapping it, big forests, a sea on
+ *  the east, mountains all around. Authored in the pixels of the top-down reference map (P(px, py) -> metres).
+ *  Everything here is DATA + analytic fields (no three.js objects):
  *
- *    W.zones      named regions (level band, biome, chambers = capsule chains that form the walkable valley floor)
- *    W.islands    non-walkable hills inside the valleys (rabbit hillocks, the ruined watchtower hill, rock stacks)
+ *    W.zones      named regions (level band, biome, chambers = capsule chains that form the walkable floor)
+ *    W.hills      WALKABLE hills (+ rolling swells everywhere on the floor); W.pads = dead-flat settlement pads
+ *    W.islands    non-walkable rock outcrops / mounds inside the plains (watchtower massif, warren hillocks, crags)
  *    W.rivers     polylines (control points + width) -> carved channels, water ribbons, colliders, bridges
- *    W.lakes      ellipses (lake, swamp pools, frozen lake)
- *    W.roads      dirt roads / footpaths; the three village exit roads are continued here
+ *    W.lakes      ellipses (the sea, ponds, swamp pools)
+ *    W.roads      dirt roads / footpaths (a closed ring = a round plaza); bridges appear on every road x river crossing
  *    W.camps      creature camps (species, centre, radius, count) -> CREATURE_DEFS.ZONES
  *    W.sites      landmark anchors consumed by scenery.js
  *
- *  Walkable ground is exactly y = 0 everywhere (the hero's foot IK needs it, see village/README.md). Elevation lives
- *  in the places nobody walks: ridges between the valleys, mountains, hilltops, river gorges (the channel is carved
- *  BELOW the ground; bridges run at y = 0).
+ *  The hero is always at y = 0 in the scene frame (foot IK); the world group is shifted by -W.yBase each frame
+ *  (village/scene.js), so the floor can have real relief: W.heightAt = true height, W.frameY = height in the hero's
+ *  frame. The village band and the settlement pads stay dead flat (their buildings are built at y = 0). Rivers / the
+ *  sea are carved BELOW the ground (bridges run at y = 0); mountains rise outside the floor.
  *
  *  Grids (2 m): sd = signed distance to the walkable floor (<0 inside), hgrid = terrain height, river / lake carve
  *  depth, bank wetness. Everything else (nav, collision push-back, terrain mesh, scenery) samples these.
@@ -27,238 +31,315 @@
   const { clamp, smooth, lerp } = V;
 
   /* ------------------------------------------------ bounds / grid ------------------------------------------------ */
-  W.bounds = { minX: -860, maxX: 860, minZ: -320, maxZ: 2240 };
+  /* The map is authored on the Metin2-style top-down reference (a 507 x 635 px image): P(px, py) converts reference
+     pixels to metres, 3 m per pixel, with the castle compound (village, centre 0,0) at px (150, 322).
+       north plains (north of the river)   |  castle meadow + west forest (west bank)  |  east marsh coast + sea (east)
+       the great river wraps the castle from the north and the east, then runs south-west; bridges on every crossing.   */
+  const PX0 = 150, PY0 = 322, PS = 3;
+  const P = (px, py) => [(px - PX0) * PS, (py - PY0) * PS];
+  W.P = P;
+  W.bounds = { minX: -620, maxX: 1200, minZ: -1000, maxZ: 1100 };
   W.G = 2;
   const G = W.G, B = W.bounds;
   W.NX = Math.round((B.maxX - B.minX) / G) + 1; W.NZ = Math.round((B.maxZ - B.minZ) / G) + 1;
   const NX = W.NX, NZ = W.NZ;
-  /* the part of the world the map / minimap shows (valleys + a margin of hills) */
-  W.region = { minX: -640, maxX: 640, minZ: -150, maxZ: 2060 };
+  /* the part of the world the map / minimap shows (the floor + a margin of mountains + the coast) */
+  W.region = { minX: -480, maxX: 930, minZ: -940, maxZ: 960 };
 
   /* village band (walkable rectangle around the walls, see village/terrain.js): x +-102.2, z -102.2 .. 144 */
   W.village = { minX: -102.2, maxX: 102.2, minZ: -102.2, maxZ: 144 };
 
   /* ------------------------------------------------ valley floors ------------------------------------------------ */
-  const cap = (x1, z1, x2, z2, r) => ({ x1, z1, x2, z2, r });
-  /* biome keys are interpreted by terrain.js (ground colours) and scenery.js (vegetation) */
+  /* cap(px1, py1, px2, py2, rpx): a capsule of the walkable floor in REFERENCE PIXELS (converted to metres) */
+  const cap = (px1, py1, px2, py2, rp) => { const a = P(px1, py1), b = P(px2, py2); return { x1: a[0], z1: a[1], x2: b[0], z2: b[1], r: rp * PS }; };
+  /* biome keys are interpreted by terrain.js (ground colours) and scenery.js (vegetation); `scatter` overrides the open-field mob table */
   W.zones = [
-    { id: 'meadow', name: 'Taşkale Çayırları', lv: [1, 3], biome: 'meadow', label: [0, 250], caps: [
-      cap(0, 150, 0, 330, 118), cap(-120, 240, -240, 300, 88), cap(0, 330, 0, 430, 92), cap(-20, 190, 100, 215, 60),
+    { id: 'meadow', name: 'Taşkale Çayırları', lv: [1, 4], biome: 'meadow', label: P(150, 392), caps: [
+      cap(150, 332, 150, 392, 54), cap(105, 385, 195, 420, 36), cap(110, 270, 195, 270, 30),
     ] },
-    { id: 'warren', name: 'Tavşan İni', lv: [2, 5], biome: 'warren', label: [215, 295], caps: [
-      cap(110, 235, 270, 330, 74), cap(180, 330, 250, 395, 52),
+    { id: 'warren', name: 'Tavşan İni', lv: [2, 5], biome: 'warren', label: P(213, 336), caps: [
+      cap(208, 312, 224, 346, 24),
     ] },
-    { id: 'creek', name: 'Akardere Vadisi', lv: [3, 6], biome: 'creek', label: [0, 500], caps: [
-      cap(-340, 480, -40, 480, 84), cap(-40, 480, 330, 470, 88), cap(-70, 548, -70, 600, 52),
-      cap(190, 548, 260, 628, 80), cap(0, 430, 0, 560, 50),
+    { id: 'wolfwood', name: 'Kurt Ormanı', lv: [5, 9], biome: 'wolfwood', label: P(80, 300), caps: [
+      cap(78, 262, 88, 300, 36), cap(88, 300, 86, 428, 40),
     ] },
-    { id: 'wolfwood', name: 'Kurt Ormanı', lv: [6, 9], biome: 'wolfwood', label: [-250, 800], caps: [
-      cap(-30, 545, -120, 650, 42), cap(-120, 650, -200, 740, 74), cap(-200, 740, -300, 880, 100), cap(-300, 880, -335, 990, 86),
+    { id: 'shadow', name: 'Gölge Orman', lv: [9, 14], biome: 'shadow', label: P(84, 480), caps: [
+      cap(86, 428, 80, 500, 38), cap(80, 500, 92, 566, 38), cap(92, 566, 112, 600, 30),
     ] },
-    { id: 'hills', name: 'Rüzgâr Tepeleri', lv: [8, 10], biome: 'hills', label: [260, 780], caps: [
-      cap(110, 545, 170, 650, 44), cap(170, 650, 290, 780, 96), cap(290, 780, 335, 940, 84), cap(290, 780, 200, 880, 76),
-      cap(335, 940, 345, 1010, 56),
+    { id: 'creek', name: 'Akarova Ovası', lv: [3, 6], biome: 'creek', label: P(130, 196), caps: [
+      cap(60, 205, 215, 205, 40), cap(58, 112, 60, 190, 28), cap(100, 150, 170, 180, 34),
     ] },
-    { id: 'marsh', name: 'Sis Bataklığı', lv: [7, 12], biome: 'marsh', label: [-10, 960], caps: [
-      cap(0, 540, 0, 690, 34), cap(0, 690, -8, 810, 50), cap(-8, 810, -25, 960, 82), cap(-25, 960, -35, 1150, 130), cap(-35, 1150, -20, 1250, 100),
+    { id: 'hills', name: 'Rüzgâr Tepeleri', lv: [6, 10], biome: 'hills', label: P(230, 150), caps: [
+      cap(170, 125, 270, 150, 46), cap(210, 190, 300, 205, 32),
     ] },
-    { id: 'canyon', name: 'Kızıl Kanyon', lv: [10, 15], biome: 'canyon', label: [440, 1220], caps: [
-      cap(345, 1010, 400, 1085, 46), cap(400, 1085, 440, 1160, 52), cap(440, 1160, 470, 1290, 92), cap(470, 1290, 420, 1400, 66),
-      cap(420, 1400, 360, 1480, 62),
+    { id: 'pinewood', name: 'Kuzey Karaçamları', lv: [10, 14], biome: 'shadow', label: P(190, 68), caps: [
+      cap(75, 62, 130, 58, 30), cap(130, 58, 290, 60, 32),
     ] },
-    { id: 'shadow', name: 'Gölge Orman', lv: [9, 16], biome: 'shadow', label: [-310, 1250], caps: [
-      cap(-335, 990, -355, 1180, 104), cap(-355, 1180, -300, 1350, 136), cap(-300, 1350, -170, 1405, 104), cap(-290, 1400, -270, 1470, 78),
+    { id: 'fortland', name: 'Kızıl Kale Yaylası', lv: [11, 15], biome: 'hills', scatter: [['goblin_warrior', 0.35], ['goblin_brute', 0.25], ['panther', 0.2], ['bear', 0.2]], label: P(345, 110), caps: [
+      cap(322, 72, 348, 150, 40), cap(338, 150, 350, 225, 34),
     ] },
-    { id: 'frost', name: 'Don Zirveleri', lv: [14, 18], biome: 'frost', label: [40, 1790], caps: [
-      cap(-20, 1250, -5, 1390, 60), cap(-5, 1390, 25, 1600, 72), cap(25, 1600, 40, 1720, 108), cap(40, 1720, 50, 1860, 150), cap(50, 1860, 50, 1950, 100),
-      cap(360, 1480, 250, 1600, 58), cap(250, 1600, 120, 1690, 72),
-      cap(-170, 1405, -80, 1550, 60), cap(-80, 1550, -10, 1650, 70),
+    { id: 'isle', name: 'Kutsal Ada', lv: [13, 16], biome: 'hills', scatter: [['troll', 0.4], ['panther', 0.3], ['goblin_brute', 0.3]], label: P(410, 150), caps: [
+      cap(410, 92, 410, 190, 20),
+    ] },
+    { id: 'marsh', name: 'Sis Bataklığı', lv: [8, 12], biome: 'marsh', label: P(348, 330), caps: [
+      cap(300, 290, 372, 292, 32), cap(372, 292, 372, 420, 42), cap(280, 300, 300, 330, 28),
+      cap(412, 238, 410, 330, 10), cap(410, 330, 412, 400, 10),
+    ] },
+    { id: 'coast', name: 'Kıyı Kayalıkları', lv: [10, 13], biome: 'hills', scatter: [['goblin_warrior', 0.3], ['snake_dune', 0.25], ['panther', 0.25], ['bear', 0.2]], label: P(345, 490), caps: [
+      cap(366, 420, 358, 548, 52), cap(412, 400, 416, 450, 10), cap(416, 450, 423, 500, 10), cap(423, 500, 433, 548, 10),
+    ] },
+    { id: 'southfen', name: 'Güney Sazlığı', lv: [6, 9], biome: 'creek', scatter: [['boar', 0.3], ['wolf', 0.3], ['stag', 0.25], ['snake', 0.15]], label: P(235, 480), caps: [
+      cap(195, 440, 265, 468, 40), cap(245, 468, 300, 520, 42), cap(158, 462, 214, 520, 32), cap(214, 520, 262, 548, 30),
+    ] },
+    { id: 'deepwood', name: 'Yaban Koru', lv: [9, 13], biome: 'wolfwood', scatter: [['wolf_dark', 0.3], ['boar_black', 0.3], ['bear', 0.2], ['panther', 0.2]], label: P(290, 548), caps: [
+      cap(262, 520, 300, 575, 40), cap(300, 530, 336, 556, 32),
     ] },
   ];
   W.zoneById = {}; for (const z of W.zones) W.zoneById[z.id] = z;
 
-  /* non-walkable hills inside the valleys: round mounds, the profile is 0 at the rim (walkable ground stays y = 0) */
+  /* ------------------------------------------------ relief (Metin2: a flat plain with swells and climbable hills) ------------------------------------------------ */
+  /* walkable hills { x, z, r, h }: profile 0 at the rim.  hl(px, py, rpx, h, k?) */
+  const hl = (px, py, rp, h, k) => { const q = P(px, py); return { x: q[0], z: q[1], r: rp * PS, h, k }; };
+  W.hills = [
+    // castle meadow: gentle swells round the town
+    hl(108, 372, 16, 7), hl(196, 405, 14, 6.5), hl(120, 440, 14, 8), hl(70, 330, 12, 7),
+    // west forest ridge-lets
+    hl(60, 285, 11, 9), hl(95, 365, 12, 10), hl(64, 410, 12, 9),
+    // shadow forest
+    hl(70, 470, 14, 12), hl(100, 520, 13, 11), hl(70, 560, 12, 10),
+    // warren knolls
+    hl(236, 345, 8, 5), hl(200, 300, 8, 5),
+    // north plains (creek)
+    hl(90, 190, 16, 9), hl(170, 190, 14, 8), hl(62, 150, 12, 10),
+    // windswept hills: the real hills
+    hl(190, 112, 20, 16), hl(255, 130, 18, 18), hl(215, 175, 14, 12), hl(285, 195, 14, 10),
+    // north pinewood
+    hl(110, 60, 14, 12), hl(200, 55, 16, 14), hl(265, 62, 14, 11),
+    // fortland
+    hl(335, 110, 14, 13), hl(345, 190, 12, 9),
+    // isle
+    hl(410, 120, 12, 11), hl(410, 170, 10, 8),
+    // marsh dunes
+    hl(325, 300, 10, 5), hl(352, 380, 10, 6),
+    // coast + south
+    hl(342, 470, 12, 12), hl(344, 520, 11, 10), hl(225, 455, 12, 7), hl(270, 495, 14, 9), hl(290, 545, 13, 11), hl(320, 545, 10, 8),
+  ];
+  /* dead-flat pads (settlements, landmarks: their buildings are built at y = 0) */
+  W.pads = [
+    { x: 0, z: 180, r: 44 },                       // the great plaza
+    { x: -150, z: 236, r: 62 },                    // farm + windmill
+    { x: -20, z: 340, r: 30 },                     // mill
+    { x: 0, z: 78, r: 40 },                        // gate
+    { x: 600, z: -621, r: 52 },                    // goblin fortress
+    { x: 30, z: -636, r: 30 },                     // standing stones
+    { x: 799, z: 24, r: 40 },                      // dock
+    { x: -270, z: 114, r: 24 },                    // wolf den
+    { x: -204, z: 618, r: 34 },                    // the Ancient Tree
+    { x: 780, z: -560, r: 34 },                    // the isle shrine
+    { x: 178, z: 66, r: 7 },                       // warren signpost
+  ];
+
+  /* non-walkable rock outcrops / mounds inside the plains: round, profile 0 at the rim */
+  const isl = (px, py, rp, h, extra) => { const q = P(px, py); return Object.assign({ x: q[0], z: q[1], r: rp * PS, h }, extra || {}); };
   W.islands = [
-    // rabbit hillocks ring the warren: burrow mounds you can see, not climb
-    { x: 128, z: 262, r: 15, h: 6.5 }, { x: 150, z: 205, r: 12, h: 5.5 }, { x: 255, z: 222, r: 16, h: 7 }, { x: 300, z: 288, r: 13, h: 5.5 },
-    { x: 272, z: 372, r: 14, h: 6.5 }, { x: 182, z: 396, r: 15, h: 7 }, { x: 128, z: 335, r: 12, h: 5 }, { x: 214, z: 262, r: 6, h: 2.6 },
-    // farm knoll
-    { x: -58, z: 262, r: 11, h: 4.5 },
-    // creek: reed islets are lakes; oak grove boulder hill
-    { x: 232, z: 584, r: 13, h: 6 },
-    // wolf wood rock stacks
-    { x: -225, z: 812, r: 17, h: 11 }, { x: -312, z: 940, r: 14, h: 9 },
-    // windswept hills: the hill with the ruined watchtower and two lesser knolls
-    { x: 232, z: 800, r: 30, h: 26, tower: true }, { x: 292, z: 700, r: 16, h: 11 }, { x: 330, z: 905, r: 14, h: 10 }, { x: 214, z: 880, r: 13, h: 9 },
-    // marsh mounds (dry hummocks)
-    { x: -30, z: 1010, r: 12, h: 4.5 }, { x: 35, z: 1100, r: 11, h: 4 }, { x: -70, z: 1160, r: 10, h: 4 },
-    // canyon pillars
-    { x: 420, z: 1120, r: 12, h: 24 }, { x: 468, z: 1330, r: 13, h: 28 }, { x: 440, z: 1215, r: 9, h: 20 }, { x: 395, z: 1440, r: 12, h: 26 },
-    // shadowwood boulders
-    { x: -330, z: 1105, r: 15, h: 9 }, { x: -318, z: 1290, r: 16, h: 10 }, { x: -240, z: 1380, r: 13, h: 8 },
-    // frost: ice knolls
-    { x: 12, z: 1700, r: 18, h: 14 }, { x: 110, z: 1790, r: 16, h: 13 }, { x: -50, z: 1830, r: 17, h: 15 },
+    // grey rock massifs of the north plains (the reference's rocky lumps)
+    isl(255, 130, 6, 30, { tower: true }), isl(300, 152, 5, 22), isl(150, 205, 5, 20), isl(120, 160, 4, 16), isl(180, 150, 4, 14),
+    isl(235, 195, 4, 16), isl(350, 70, 4, 18), isl(240, 80, 4, 15),
+    // castle side crags
+    isl(100, 300, 4, 15), isl(120, 455, 4, 17), isl(70, 380, 3.5, 14), isl(88, 545, 4, 17), isl(60, 500, 3.5, 14),
+    // warren burrow hillocks (rabbit mounds you can see but not climb)
+    isl(205, 318, 2.2, 5.5), isl(235, 322, 2.2, 5.5), isl(226, 352, 2.2, 5), isl(202, 345, 2, 5), isl(216, 304, 2, 4.5),
+    // east side
+    isl(335, 250, 4, 13), isl(360, 350, 3.5, 11), isl(345, 450, 4, 15), isl(320, 530, 4, 14), isl(260, 540, 3.5, 12), isl(225, 485, 3.5, 11),
+    // marsh dry hummocks
+    isl(312, 330, 3, 5), isl(340, 400, 3, 5),
   ];
 
   /* mountain amplitude anchors: [x, z, extra height, radius] on top of the base ridge height */
   W.baseAmp = 46;
   W.ampAnchors = [
-    [20, 1850, 90, 460], [0, 1950, 60, 260], [450, 1250, 28, 260], [-320, 1250, 24, 260], [260, 800, -14, 260], [-10, 950, -20, 220],
-    [0, 250, -16, 240], [200, 300, -10, 160], [0, -100, -10, 200], [-250, 800, 6, 200], [-400, 550, -12, 160],
+    [-300, -500, 40, 380], [800, -700, 30, 360], [-380, 700, 34, 340], [500, 900, 26, 360], [0, -980, 34, 360], [-560, 100, 26, 280],
   ];
 
   /* ------------------------------------------------ rivers / lakes ------------------------------------------------ */
   const RIVER_DEPTH = 1.15, RIVER_BANK = 3.0, WATER_Y = -0.55;
   W.WATER_Y = WATER_Y; W.RIVER_BANK = RIVER_BANK;
+  const pts = (list) => list.map(([a, b]) => P(a, b));
   W.rivers = [
-    { id: 'akar', name: 'Akardere', w: 11, pts: [[860, 440], [700, 452], [560, 440], [440, 468], [330, 466], [250, 458], [140, 492], [30, 468], [-80, 500], [-190, 486], [-300, 522], [-380, 548]] },
-    { id: 'gumus', name: 'Gümüşdere', w: 7, falls: true, pts: [[372, 842], [344, 770], [302, 690], [284, 612], [292, 536], [262, 470]] },
-    { id: 'kara', name: 'Karadere', w: 7, pts: [[-96, 1100], [-150, 1080], [-215, 1010], [-262, 930], [-318, 840], [-376, 725], [-400, 640], [-392, 590]] },
+    // the great river: from the west edge north of the castle, round its north-east, then south-west to the south edge
+    { id: 'akar', name: 'Akardere', w: 13, pts: pts([[-10, 213], [40, 232], [100, 237], [150, 243], [186, 251], [225, 268], [255, 292], [262, 320], [249, 344], [222, 373], [205, 399], [180, 431], [150, 463], [130, 506], [121, 560], [108, 640]]) },
+    // the strait that cuts the Holy Isle off from the fortland (runs to the sea)
+    { id: 'bogaz', name: 'Ada Boğazı', w: 15, pts: pts([[386, 60], [386, 120], [385, 170], [386, 205], [410, 218], [450, 222]]) },
   ];
   W.lakes = [
-    { id: 'aynagol', name: 'Aynagöl', x: -430, z: 545, rx: 76, rz: 52, rot: 0.2, kind: 'lake' },
-    { id: 'buzgolu', name: 'Buzgölü', x: -140, z: 1760, rx: 56, rz: 40, rot: -0.3, kind: 'ice' },
-    { id: 'sazlik', name: 'Sazlık Gölü', x: -70, z: 575, rx: 22, rz: 16, rot: 0.4, kind: 'pond' },
-    { id: 'pool1', name: 'Bataklık Gölcüğü', x: -60, z: 905, rx: 24, rz: 17, rot: 0.3, kind: 'swamp' },
-    { id: 'pool2', name: 'Bataklık Gölcüğü', x: 30, z: 960, rx: 20, rz: 14, rot: -0.5, kind: 'swamp' },
-    { id: 'pool3', name: 'Bataklık Gölcüğü', x: -75, z: 1040, rx: 26, rz: 18, rot: 0.1, kind: 'swamp' },
-    { id: 'pool4', name: 'Bataklık Gölcüğü', x: 40, z: 1160, rx: 22, rz: 16, rot: 0.9, kind: 'swamp' },
-    { id: 'pool5', name: 'Bataklık Gölcüğü', x: -20, z: 1215, rx: 18, rz: 13, rot: -0.2, kind: 'swamp' },
-    { id: 'pool6', name: 'Bataklık Gölcüğü', x: -75, z: 1130, rx: 15, rz: 11, rot: 0.6, kind: 'swamp' },
-    { id: 'pool7', name: 'Dere Gölcüğü', x: 230, z: 548, rx: 16, rz: 11, rot: 0.2, kind: 'pond' },
+    // the eastern sea (overlapping ellipses = a living coast line)
+    { id: 'deniz', name: 'Doğu Denizi', x: P(490, 330)[0], z: P(490, 330)[1], rx: 72 * PS, rz: 300 * PS, rot: 0, kind: 'lake' },
+    // inland ponds
+    { id: 'aynagol', name: 'Aynagöl', x: P(115, 175)[0], z: P(115, 175)[1], rx: 58, rz: 38, rot: 0.2, kind: 'lake' },
+    { id: 'sazlik', name: 'Sazlık Gölü', x: P(215, 495)[0], z: P(215, 495)[1], rx: 26, rz: 18, rot: 0.4, kind: 'pond' },
+    { id: 'pool1', name: 'Bataklık Gölcüğü', x: P(325, 340)[0], z: P(325, 340)[1], rx: 26, rz: 18, rot: 0.3, kind: 'swamp' },
+    { id: 'pool2', name: 'Bataklık Gölcüğü', x: P(345, 372)[0], z: P(345, 372)[1], rx: 22, rz: 15, rot: -0.5, kind: 'swamp' },
+    { id: 'pool3', name: 'Bataklık Gölcüğü', x: P(330, 410)[0], z: P(330, 410)[1], rx: 28, rz: 18, rot: 0.1, kind: 'swamp' },
+    { id: 'pool4', name: 'Bataklık Gölcüğü', x: P(358, 300)[0], z: P(358, 300)[1], rx: 20, rz: 14, rot: 0.9, kind: 'swamp' },
+    { id: 'pool5', name: 'Bataklık Gölcüğü', x: P(318, 285)[0], z: P(318, 285)[1], rx: 18, rz: 13, rot: -0.2, kind: 'swamp' },
+    { id: 'pool6', name: 'Dere Gölcüğü', x: P(240, 505)[0], z: P(240, 505)[1], rx: 16, rz: 11, rot: 0.2, kind: 'pond' },
   ];
 
   /* ------------------------------------------------ roads ------------------------------------------------ */
-  /* kind: 'dirt' (4.4 m, the village's own road style), 'path' (footpath). The village exit roads stop at the splat
-     region; their continuations start from the same end points. */
+  /* kind: 'dirt' (4.4 m, the village's own road style), 'path' (footpath). Bridges appear on every road x river crossing. */
+  const ring = (cx, cy, rp, n) => { const o = []; for (let i = 0; i <= n; i++) { const a = i / n * Math.PI * 2; o.push(P(cx + Math.cos(a) * rp, cy + Math.sin(a) * rp)); } return o; };
   W.roads = [
-    { id: 'main', w: 5, kind: 'dirt', pts: [[0, 305], [12, 380], [6, 440], [0, 480], [-4, 525], [0, 570]] },
-    { id: 'west', w: 4.4, kind: 'dirt', pts: [[0, 570], [-60, 612], [-120, 662], [-190, 735], [-250, 805], [-300, 875], [-332, 960], [-350, 1050], [-345, 1150], [-320, 1250], [-250, 1330], [-170, 1392], [-110, 1450], [-50, 1550], [8, 1650]] },
-    { id: 'east', w: 4.4, kind: 'dirt', pts: [[0, 570], [70, 592], [140, 640], [200, 700], [262, 775], [306, 870], [336, 955], [378, 1045], [425, 1125], [455, 1215], [470, 1300], [425, 1395], [340, 1490], [215, 1590], [90, 1685]] },
-    { id: 'mid', w: 4.4, kind: 'dirt', pts: [[0, 570], [2, 650], [-3, 740], [-9, 850], [-20, 950], [-30, 1050], [-22, 1150], [-12, 1260], [0, 1380], [10, 1500], [22, 1600], [42, 1700], [50, 1800], [50, 1895]] },
-    { id: 'sw', w: 4.4, kind: 'dirt', pts: [[-190, 269], [-232, 292], [-270, 326], [-292, 372]] },
-    { id: 'se', w: 4.4, kind: 'dirt', pts: [[175, 244], [218, 276], [248, 318], [262, 352]] },
-    { id: 'farm', w: 3, kind: 'path', pts: [[8, 300], [-10, 300], [-26, 306]] },
-    { id: 'gate', w: 4.4, kind: 'dirt', pts: [[0, 305], [0, 117]] },
+    { id: 'gate', w: 4.4, kind: 'dirt', pts: [[0, 117], [0, 160]] },
+    { id: 'plaza', w: 16, kind: 'dirt', pts: ring(150, 382, 6.5, 14) },                    // the great round plaza
+    // south road: plaza -> main (south) bridge -> south-east lands -> deep wood
+    { id: 'main', w: 5, kind: 'dirt', pts: pts([[150, 388], [150, 420], [152, 450], [158, 478], [175, 505], [205, 533], [245, 556], [285, 580]]) },
+    // west road: plaza -> west bank forest -> north-west bridge -> north plains
+    { id: 'west', w: 4.4, kind: 'dirt', pts: pts([[145, 384], [118, 388], [96, 385], [80, 362], [76, 322], [76, 282], [76, 254], [76, 232], [72, 205], [62, 180], [58, 150], [70, 112], [96, 80]]) },
+    // south-west branch: west bank -> shadow forest
+    { id: 'wsouth', w: 4.4, kind: 'dirt', pts: pts([[96, 386], [90, 430], [85, 480], [84, 520], [92, 560], [108, 595]]) },
+    // east road: plaza -> south bridge -> marsh coast -> north along the coast to the fortland
+    { id: 'east', w: 4.4, kind: 'dirt', pts: pts([[155, 382], [190, 380], [214, 386], [250, 372], [300, 358], [335, 346], [350, 310], [350, 260], [346, 210], [340, 160], [336, 110]]) },
+    // north road: plaza -> round the castle -> north bridge -> north plains hub -> pinewood
+    { id: 'north', w: 4.4, kind: 'dirt', pts: pts([[158, 378], [180, 362], [202, 336], [208, 300], [198, 266], [190, 252], [188, 226], [184, 190], [182, 150], [178, 110], [182, 66]]) },
+    // east bridge road: warren -> east bridge -> marsh
+    { id: 'ebridge', w: 4.4, kind: 'dirt', pts: pts([[210, 320], [236, 312], [262, 307], [290, 304], [322, 302], [350, 304]]) },
+    // north plains ring
+    { id: 'nring', w: 4.4, kind: 'dirt', pts: pts([[58, 150], [75, 105], [110, 78], [182, 66], [260, 70], [322, 92], [340, 140], [340, 200]]) },
+    { id: 'ncross', w: 3.6, kind: 'dirt', pts: pts([[182, 150], [225, 154], [270, 156], [300, 182], [338, 192]]) },
+    { id: 'nwest', w: 3.6, kind: 'dirt', pts: pts([[184, 190], [140, 196], [96, 198], [62, 182]]) },
+    // holy-isle bridge
+    { id: 'isle', w: 4.4, kind: 'dirt', pts: pts([[340, 150], [372, 150], [390, 150], [410, 140], [410, 100]]) },
+    // south-east loops
+    { id: 'sloop', w: 3.6, kind: 'dirt', pts: pts([[205, 533], [250, 500], [290, 480], [330, 470], [344, 450]]) },
+    { id: 'coastroad', w: 3.6, kind: 'dirt', pts: pts([[350, 420], [346, 470], [340, 520], [324, 553], [290, 580]]) },
+    { id: 'farm', w: 3, kind: 'path', pts: pts([[145, 384], [128, 398], [108, 400]]) },
   ];
 
   /* ------------------------------------------------ creature camps ------------------------------------------------ */
-  /* [id, name, species, cx, cz, r, count]. Species come from creatures/defs.js + creatures/variants.js. */
+  /* [id, name, species, px, py, r, count]  (reference pixels). Species come from creatures/defs.js + variants + species/*.js. */
   const C = [];
-  const camp = (id, name, species, cx, cz, r, count) => C.push({ id, name, species, cx, cz, r, count });
-  // --- Taskale meadows (1-3) ---
-  camp('rat_a', 'Sıçan Çayırı', 'rat', -112, 205, 12, 8);
-  camp('rat_b', 'Batı Otlakları', 'rat', -178, 318, 13, 8);
-  camp('rat_c', 'Değirmen Arkası', 'rat', -62, 365, 11, 7);
-  camp('rat_d', 'Kapı Yanı Çayır', 'rat', 74, 198, 10, 6);
-  camp('rat_e', 'Güney Otlakları', 'rat', 30, 408, 12, 7);
-  camp('rab_a', 'Havuç Bahçeleri', 'rabbit', 166, 272, 12, 6);
-  camp('rab_b', 'Kuzey İnleri', 'rabbit', 205, 238, 11, 6);
-  camp('rab_c', 'Doğu İnleri', 'rabbit', 262, 308, 12, 6);
-  camp('rab_d', 'Derin İn', 'rabbit', 224, 350, 12, 6);
-  camp('rab_e', 'Kök Yuvası', 'rabbit', 160, 342, 11, 5);
-  camp('rab_king', 'Kral Yuvası', 'rabbit_king', 214, 300, 5, 1);
-  // --- Akardere valley (3-6) ---
-  camp('snk_a', 'Sazlık', 'snake', -72, 578, 14, 6);
-  camp('snk_b', 'Batı Sazlığı', 'snake', -178, 505, 11, 5);
-  camp('snk_c', 'Dere Dirseği', 'snake', 118, 520, 10, 5);
-  camp('snk_d', 'Kıyı Kamışlığı', 'snake', -255, 478, 11, 5);
-  camp('boar_a', 'Meşe Korusu', 'boar', 190, 596, 14, 6);
-  camp('boar_b', 'Meşe Dibi', 'boar', 258, 640, 12, 5);
-  camp('boar_c', 'Kütük Açıklığı', 'boar', 150, 612, 11, 5);
-  camp('boar_d', 'Dere Ormanı', 'boar', 232, 522, 11, 5);
-  // --- Wolf wood (6-9) ---
-  camp('boar_e', 'Orman Girişi', 'boar', -92, 640, 12, 5);
-  camp('wolf_a', 'Kurt Patikası', 'wolf', -150, 690, 12, 5);
-  camp('wolf_b', 'Kurt Bozkırı', 'wolf', -228, 770, 13, 6);
-  camp('wolf_c', 'Kurt İni', 'wolf', -318, 905, 13, 6);
-  camp('wolf_d', 'Uluma Kayalığı', 'wolf', -332, 1000, 13, 5);
-  camp('wolf_e', 'Gece Yuvası', 'wolf', -270, 850, 11, 5);
-  // --- Windswept hills (8-10) ---
-  camp('wolf_f', 'Rüzgâr Otlağı', 'wolf', 190, 668, 11, 5);
-  camp('gob_a', 'Tepe Gözcüleri', 'goblin', 224, 742, 12, 6);
-  camp('gob_b', 'Goblin Karakolu', 'goblin', 296, 820, 13, 6);
-  camp('gob_c', 'Yıkık Kule Kampı', 'goblin', 238, 852, 12, 5);
-  camp('gob_d', 'Taş Çember Kampı', 'goblin', 336, 930, 12, 6);
-  camp('boss_spike', 'Dikensırt İni', 'spikeback', 342, 1000, 6, 1);
-  // --- Mist marsh (7-12) ---
-  camp('mrat_a', 'Çamur Çukurları', 'rat_swamp', -4, 765, 13, 7);
-  camp('mrat_b', 'Çürük Köprü', 'rat_swamp', 12, 860, 14, 7);
-  camp('mrat_c', 'Sis Gölcükleri', 'rat_swamp', -78, 960, 13, 7);
-  camp('cobra_a', 'Zehirli Sazlık', 'snake_marsh', -28, 1000, 13, 6);
-  camp('cobra_b', 'Kara Su', 'snake_marsh', 42, 1050, 13, 6);
-  camp('cobra_c', 'Yosun Adası', 'snake_marsh', -88, 1100, 12, 5);
-  camp('cobra_d', 'Dipsiz Çamur', 'snake_marsh', 12, 1190, 13, 6);
-  camp('swolf_a', 'Bataklık Kıyısı', 'wolf_dark', -130, 1020, 12, 5);
-  camp('swolf_b', 'Sis Kurtları', 'wolf_dark', 92, 1000, 12, 5);
-  // --- Red canyon (10-15) ---
-  camp('gw_a', 'Kanyon Girişi', 'goblin_warrior', 394, 1075, 12, 6);
-  camp('gw_b', 'Kızıl Duvarlar', 'goblin_warrior', 430, 1150, 12, 6);
-  camp('rattler_a', 'Sıcak Kayalar', 'snake_dune', 412, 1195, 12, 6);
-  camp('rattler_b', 'Çıngırak Geçidi', 'snake_dune', 452, 1360, 12, 6);
-  camp('gw_c', 'Goblin Kalesi Önü', 'goblin_warrior', 462, 1232, 13, 6);
-  camp('gb_a', 'Kale İçi', 'goblin_brute', 475, 1290, 13, 6);
-  camp('gb_b', 'Mızrak Avlusu', 'goblin_brute', 440, 1345, 11, 5);
-  camp('gb_c', 'Kemik Ocağı', 'goblin_brute', 400, 1410, 12, 5);
-  camp('boss_gob', 'Kemikkıran Tahtı', 'goblin_chief', 482, 1268, 5, 1);
-  camp('boss_red', 'Kızıl Dikensırt Yatağı', 'spike_red', 360, 1470, 7, 1);
-  // --- Shadowwood (9-16) ---
-  camp('sw_a', 'Gölge Patikası', 'wolf_dark', -345, 1065, 13, 6);
-  camp('sw_b', 'Karanlık Çalılık', 'wolf_dark', -365, 1160, 13, 6);
-  camp('bb_a', 'Kara Domuz Yuvası', 'boar_black', -335, 1215, 13, 6);
-  camp('bb_b', 'Kök Çukuru', 'boar_black', -270, 1305, 13, 6);
-  camp('sw_c', 'Kurt Geçidi', 'wolf_dark', -300, 1250, 12, 5);
-  camp('bb_c', 'Kadim Ağaç Etekleri', 'boar_black', -205, 1385, 13, 6);
-  camp('bb_d', 'Çürük Kütük', 'boar_black', -340, 1330, 12, 5);
-  camp('boss_alpha', 'Karakulak Ini', 'wolf_alpha', -280, 1448, 6, 1);
-  camp('alpha_pack', 'Karakulak Sürüsü', 'wolf_dark', -268, 1425, 11, 4);
-  // --- Frost peaks (14-18) ---
-  camp('fw_a', 'Don Geçidi', 'wolf_frost', 12, 1590, 13, 6);
-  camp('fw_b', 'Beyaz Yamaç', 'wolf_frost', 80, 1700, 13, 6);
-  camp('fw_c', 'Kış Yuvası', 'wolf_frost', -60, 1750, 13, 6);
-  camp('ib_a', 'Demirdiş Vadisi', 'boar_iron', 5, 1665, 12, 6);
-  camp('ib_b', 'Taş Yaprak', 'boar_iron', 110, 1745, 12, 5);
-  camp('ib_c', 'Buzlu Çalılık', 'boar_iron', -20, 1840, 12, 5);
-  camp('fg_a', 'Buz Goblini Kampı', 'goblin_frost', 70, 1830, 13, 6);
-  camp('fg_b', 'Kırağı Gözcüleri', 'goblin_frost', -90, 1660, 12, 6);
-  camp('fg_c', 'Zirve Karakolu', 'goblin_frost', 30, 1905, 12, 6);
-  camp('fg_d', 'Donuk Geçit', 'goblin_frost', 215, 1580, 11, 5);
-  camp('fg_e', 'Kuzey Buz Kampı', 'goblin_frost', 135, 1660, 11, 5);
-  camp('boss_frost', 'Buzsırt Mağarası', 'spike_frost', 50, 1938, 7, 1);
-  // --- new species (creatures/species/{stag,bear,panther,troll}.js) ---
-  camp('stag_a', 'Geyik Yamacı', 'stag', 186, 742, 12, 5);
-  camp('stag_b', 'Boynuz Geçidi', 'stag', 332, 748, 11, 4);
-  camp('stag_c', 'Sis Otlağı', 'stag', 266, 908, 11, 4);
-  camp('bear_a', 'Ayı Mağaraları', 'bear', -382, 1118, 13, 4);
-  camp('bear_b', 'Kök Ayıları', 'bear', -248, 1372, 12, 4);
-  camp('bear_c', 'Kayalık Ayıları', 'bear', 388, 1032, 12, 4);
-  camp('bear_d', 'Bataklık Ayıları', 'bear', 76, 1110, 12, 3);
-  camp('cat_a', 'Puma Kayalığı', 'panther', 440, 1098, 12, 4);
-  camp('cat_b', 'Gölgeli Yarık', 'panther', 408, 1330, 12, 4);
-  camp('cat_c', 'Kızıl Çıkıntı', 'panther', 326, 1438, 11, 3);
-  camp('cat_d', 'Karanlık Pusu', 'panther', -332, 1385, 11, 3);
-  camp('trl_a', 'Troll Köprüsü', 'troll', -185, 1340, 12, 3);
-  camp('trl_b', 'Troll Geçidi', 'troll', -4, 1452, 12, 3);
-  camp('trl_c', 'Taş Troller', 'troll', 300, 1532, 12, 3);
-  camp('trl_d', 'Yosunlu Tepe', 'troll', -76, 1585, 12, 3);
-  // --- frost valley, top levels (variants of the new bodies: creatures/defs.js VARIANT_SPECS) ---
-  camp('pb_a', 'Kutup Ayısı Yatağı', 'bear_polar', -25, 1772, 12, 4);
-  camp('pb_b', 'Beyaz Mağara', 'bear_polar', 152, 1792, 12, 3);
-  camp('snc_a', 'Kar Pusu', 'panther_snow', 170, 1716, 11, 4);
-  camp('snc_b', 'Buzlu Kayalık', 'panther_snow', -8, 1722, 10, 3);
-  camp('tf_a', 'Buz Trolü Kemeri', 'troll_frost', 98, 1888, 12, 3);
-  camp('tf_b', 'Don Mağarası', 'troll_frost', -52, 1898, 12, 3);
+  const camp = (id, name, species, px, py, r, count) => { const q = P(px, py); C.push({ id, name, species, cx: q[0], cz: q[1], r, count }); };
+  const campM = (id, name, species, cx, cz, r, count) => C.push({ id, name, species, cx, cz, r, count });
+  // --- castle meadows (1-4) ---
+  camp('rat_a', 'Sıçan Çayırı', 'rat', 112, 396, 12, 8);
+  camp('rat_b', 'Çayır Kıyısı', 'rat', 192, 398, 11, 7);
+  camp('rat_c', 'Değirmen Arkası', 'rat', 135, 440, 11, 7);
+  camp('rat_d', 'Batı Otlakları', 'rat', 96, 424, 12, 7);
+  camp('rat_e', 'Kale Duvarı Dibi', 'rat', 108, 345, 10, 6);
+  camp('rat_f', 'Kuzey Çayırı', 'rat', 140, 270, 11, 6);
+  camp('snk_a', 'Taşlık Yılanları', 'snake', 118, 432, 11, 5);
+  camp('snk_b', 'Dere Dirseği', 'snake', 172, 428, 10, 5);
+  campM('rab_a', 'Havuç Bahçeleri', 'rabbit', 160, -8, 10, 6);
+  campM('rab_b', 'Kuzey İnleri', 'rabbit', 222, -8, 10, 6);
+  campM('rab_c', 'Doğu İnleri', 'rabbit', 228, 48, 10, 6);
+  campM('rab_d', 'Derin İn', 'rabbit', 168, 50, 10, 6);
+  campM('rab_e', 'Kök Yuvası', 'rabbit', 192, -34, 9, 5);
+  campM('rab_king', 'Kral Yuvası', 'rabbit_king', 192, 20, 5, 1);
+  // --- west forest (5-9) ---
+  camp('boar_a', 'Orman Girişi', 'boar', 66, 268, 12, 5);
+  camp('boar_b', 'Kütük Açıklığı', 'boar', 62, 322, 12, 5);
+  camp('boar_c', 'Meşe Dibi', 'boar', 92, 300, 11, 5);
+  camp('wolf_a', 'Kurt Patikası', 'wolf', 66, 354, 12, 5);
+  camp('wolf_b', 'Kurt Bozkırı', 'wolf', 100, 392, 11, 5);
+  camp('wolf_c', 'Uluma Kayalığı', 'wolf', 60, 396, 13, 6);
+  camp('wolf_d', 'Kurt İni', 'wolf', 62, 362, 11, 5);
+  camp('stag_a', 'Geyik Yamacı', 'stag', 90, 336, 12, 4);
+  camp('wolf_e', 'Gece Yuvası', 'wolf', 82, 270, 11, 5);
+  // --- north-west creek plains (3-6) ---
+  camp('snk_n1', 'Göl Kamışlığı', 'snake', 80, 178, 11, 5);
+  camp('snk_n2', 'Batı Sazlığı', 'snake', 118, 218, 11, 5);
+  camp('boar_n1', 'Ova Domuzları', 'boar', 150, 192, 12, 5);
+  camp('boar_n2', 'Kuzey Koruluğu', 'boar', 195, 200, 12, 5);
+  camp('boar_n3', 'Dere Ormanı', 'boar', 66, 214, 11, 5);
+  camp('boar_n4', 'Köşe Açıklığı', 'boar', 60, 150, 11, 5);
+  camp('wolf_n1', 'Kuzeybatı Kurtları', 'wolf', 60, 120, 12, 5);
+  camp('stag_n1', 'Ova Geyikleri', 'stag', 100, 160, 11, 4);
+  // --- windswept hills (6-10) ---
+  camp('wolf_h1', 'Rüzgâr Otlağı', 'wolf', 180, 176, 11, 5);
+  camp('wolf_h2', 'Tepe Kurtları', 'wolf', 205, 130, 11, 5);
+  camp('gob_a', 'Tepe Gözcüleri', 'goblin', 235, 160, 12, 6);
+  camp('gob_b', 'Goblin Karakolu', 'goblin', 285, 175, 13, 6);
+  camp('gob_c', 'Yıkık Kule Kampı', 'goblin', 252, 150, 11, 5);
+  camp('gob_d', 'Taş Çember Kampı', 'goblin', 165, 122, 12, 6);
+  camp('stag_h1', 'Boynuz Geçidi', 'stag', 215, 105, 11, 4);
+  camp('stag_h2', 'Sis Otlağı', 'stag', 300, 205, 11, 4);
+  camp('boss_spike', 'Dikensırt İni', 'spikeback', 190, 90, 6, 1);
+  // --- north pinewood (10-14) ---
+  camp('pw_a', 'Karaçam Patikası', 'wolf_dark', 100, 62, 12, 5);
+  camp('pw_b', 'Kök Çukuru', 'boar_black', 150, 52, 12, 5);
+  camp('pw_c', 'Gölge Çalılığı', 'wolf_dark', 205, 60, 12, 5);
+  camp('pw_d', 'Kara Domuz Yuvası', 'boar_black', 250, 62, 12, 5);
+  camp('pw_e', 'Ayı Mağaraları', 'bear', 125, 75, 11, 4);
+  camp('pw_f', 'Kayalık Ayıları', 'bear', 225, 78, 11, 4);
+  camp('boss_alpha', 'Karakulak İni', 'wolf_alpha', 170, 40, 6, 1);
+  camp('alpha_pack', 'Karakulak Sürüsü', 'wolf_dark', 160, 56, 10, 4);
+  // --- fortland (11-15) ---
+  camp('gw_a', 'Kale Yolu', 'goblin_warrior', 342, 190, 12, 6);
+  camp('gw_b', 'Kızıl Gözcüler', 'goblin_warrior', 336, 145, 12, 6);
+  camp('gw_c', 'Kale Önü', 'goblin_warrior', 330, 100, 12, 6);
+  camp('gb_a', 'Kale İçi', 'goblin_brute', 345, 118, 12, 6);
+  camp('gb_b', 'Mızrak Avlusu', 'goblin_brute', 338, 85, 11, 5);
+  camp('gb_c', 'Kemik Ocağı', 'goblin_brute', 348, 160, 11, 5);
+  camp('cat_f', 'Kızıl Çıkıntı', 'panther', 326, 215, 11, 3);
+  camp('boss_gob', 'Kemikkıran Tahtı', 'goblin_chief', 348, 112, 5, 1);
+  camp('boss_red', 'Kızıl Dikensırt Yatağı', 'spike_red', 335, 70, 7, 1);
+  // --- holy isle (13-16) ---
+  camp('trl_i1', 'Ada Trolleri', 'troll', 410, 112, 12, 3);
+  camp('trl_i2', 'Taş Troller', 'troll', 410, 160, 11, 3);
+  camp('cat_i1', 'Kutsal Pusu', 'panther', 408, 135, 10, 3);
+  // --- east marsh coast (8-12) ---
+  camp('mrat_a', 'Çamur Çukurları', 'rat_swamp', 300, 298, 13, 7);
+  camp('mrat_b', 'Çürük Köprü', 'rat_swamp', 335, 268, 14, 7);
+  camp('mrat_c', 'Sis Gölcükleri', 'rat_swamp', 355, 330, 13, 7);
+  camp('cobra_a', 'Zehirli Sazlık', 'snake_marsh', 330, 318, 13, 6);
+  camp('cobra_b', 'Kara Su', 'snake_marsh', 352, 365, 13, 6);
+  camp('cobra_c', 'Yosun Adası', 'snake_marsh', 318, 392, 12, 5);
+  camp('cobra_d', 'Dipsiz Çamur', 'snake_marsh', 350, 412, 13, 6);
+  camp('swolf_a', 'Bataklık Kıyısı', 'wolf_dark', 340, 288, 12, 5);
+  camp('swolf_b', 'Sis Kurtları', 'wolf_dark', 312, 350, 12, 5);
+  camp('bear_d', 'Bataklık Ayıları', 'bear', 345, 345, 12, 3);
+  // --- coast cliffs (10-13) ---
+  camp('gw_d', 'Sahil Gözcüleri', 'goblin_warrior', 348, 440, 12, 6);
+  camp('rattler_a', 'Sıcak Kayalar', 'snake_dune', 340, 480, 12, 6);
+  camp('rattler_b', 'Çıngırak Kıyısı', 'snake_dune', 342, 520, 12, 6);
+  camp('cat_a', 'Puma Kayalığı', 'panther', 344, 460, 12, 4);
+  camp('cat_b', 'Gölgeli Yarık', 'panther', 336, 540, 12, 4);
+  // --- south fen (6-9) ---
+  camp('boar_s1', 'Sazlık Domuzları', 'boar', 210, 450, 12, 5);
+  camp('boar_s2', 'Dere Ormanı', 'boar', 255, 470, 12, 5);
+  camp('wolf_s1', 'Güney Kurtları', 'wolf', 235, 495, 12, 5);
+  camp('wolf_s2', 'Kıyı Kurtları', 'wolf', 280, 500, 12, 5);
+  camp('stag_s1', 'Sazlık Geyikleri', 'stag', 270, 520, 11, 4);
+  camp('snk_s1', 'Gölcük Yılanları', 'snake', 220, 470, 10, 5);
+  // --- deep wood (9-13) ---
+  camp('dw_a', 'Karanlık Çalılık', 'wolf_dark', 270, 540, 12, 5);
+  camp('dw_b', 'Kara Domuz Yuvası', 'boar_black', 300, 560, 12, 5);
+  camp('dw_c', 'Kök Çukuru', 'boar_black', 322, 548, 11, 5);
+  camp('dw_d', 'Kök Ayıları', 'bear', 285, 580, 11, 4);
+  camp('dw_e', 'Pusu Yarığı', 'panther', 262, 565, 11, 3);
+  // --- shadowwood, south-west (9-14) ---
+  camp('sw_a', 'Gölge Patikası', 'wolf_dark', 84, 445, 13, 6);
+  camp('sw_b', 'Karanlık Çalılık', 'wolf_dark', 80, 480, 13, 6);
+  camp('bb_a', 'Kara Domuz Yuvası', 'boar_black', 78, 515, 13, 6);
+  camp('bb_b', 'Kök Çukuru', 'boar_black', 92, 545, 13, 6);
+  camp('bb_c', 'Kadim Ağaç Etekleri', 'boar_black', 96, 572, 13, 6);
+  camp('bear_a', 'Ayı Mağaraları', 'bear', 74, 498, 12, 4);
+  camp('bear_b', 'Kök Ayıları', 'bear', 100, 590, 12, 4);
+  camp('trl_a', 'Troll Geçidi', 'troll', 66, 535, 12, 3);
+  camp('trl_b', 'Yosunlu Tepe', 'troll', 108, 525, 12, 3);
+  camp('cat_d', 'Karanlık Pusu', 'panther', 72, 568, 11, 3);
   W.camps = C;
 
-  /* named places for the map + scenery (x, z, kind, label) */
+  /* named places for the map + scenery (x, z) */
   W.sites = {
-    farm: [-34, 300], mill: [14, 476], dock: [-362, 538], warrenHeart: [214, 300], wolfDen: [-326, 978], tower: [232, 800],
-    stones: [170, 764], fort: [472, 1268], titan: [-290, 1452], icecave: [50, 1950], gate: [0, 78],
+    gate: [0, 78], plaza: [0, 180], farm: [-150, 236], mill: [-20, 340], warrenHeart: [192, 20], wolfDen: [-270, 114],
+    tower: P(255, 130), stones: [30, -636], fort: [600, -621], dock: [799, 24], titan: [-204, 618], shrine: [780, -560],
   };
   W.markers = [
-    ['Taşkale', 0, 0], ['Çiftlik', -34, 300], ['Tavşan İni', 214, 300], ['Akardere Değirmeni', 14, 476], ['Aynagöl', -430, 545],
-    ['Kurt İni', -326, 978], ['Yıkık Gözcü Kulesi', 232, 800], ['Dikensırt İni', 342, 1000], ['Sis Bataklığı', -10, 1000],
-    ['Goblin Kalesi', 472, 1268], ['Kadim Ağaç', -290, 1452], ['Don Zirveleri', 40, 1790], ['Buzsırt Mağarası', 50, 1938], ['Buzgölü', -140, 1760],
+    ['Taşkale', 0, 0], ['Büyük Meydan', 0, 180], ['Çiftlik', -150, 236], ['Akardere Değirmeni', -20, 340], ['Tavşan İni', 192, 20],
+    ['Kurt İni', -270, 114], ['Yıkık Gözcü Kulesi', P(255, 130)[0], P(255, 130)[1]], ['Taş Çember', 30, -636], ['Dikensırt İni', P(190, 90)[0], P(190, 90)[1]],
+    ['Goblin Kalesi', 600, -621], ['Kutsal Ada', 780, -560], ['Sis Bataklığı', P(345, 340)[0], P(345, 340)[1]], ['İskele', 799, 24],
+    ['Kadim Ağaç', -204, 618], ['Kuzey Karaçamları', P(190, 62)[0], P(190, 62)[1]], ['Yaban Koru', P(290, 550)[0], P(290, 550)[1]],
   ];
 
   /* ------------------------------------------------ geometry helpers ------------------------------------------------ */
@@ -413,11 +494,9 @@
     wolfwood: [['wolf', 0.5], ['boar', 0.3], ['stag', 0.2]],
     hills:    [['goblin', 0.3], ['wolf', 0.2], ['stag', 0.3], ['boar', 0.2]],
     marsh:    [['rat_swamp', 0.35], ['snake_marsh', 0.35], ['wolf_dark', 0.2], ['bear', 0.1]],
-    canyon:   [['goblin_warrior', 0.3], ['snake_dune', 0.25], ['panther', 0.25], ['goblin_brute', 0.1], ['bear', 0.1]],
     shadow:   [['wolf_dark', 0.3], ['boar_black', 0.3], ['bear', 0.15], ['panther', 0.15], ['troll', 0.1]],
-    frost:    [['wolf_frost', 0.25], ['boar_iron', 0.15], ['goblin_frost', 0.25], ['bear_polar', 0.1], ['panther_snow', 0.1], ['troll_frost', 0.1], ['troll', 0.05]],
   };
-  W.SCATTER_CAMPS = 340;
+  W.SCATTER_CAMPS = 320;
   W.scatterCamps = function () {
     if (W.scattered) return; W.scattered = true;
     const R = V.rng(20261105), out = [];
@@ -427,14 +506,14 @@
       const x = lerp(W.region.minX, W.region.maxX, R()), z = lerp(W.region.minZ, W.region.maxZ, R());
       const r = 9;
       if (W.sdAt(x, z) > -(r * 0.75 + 3)) continue;
-      if (Math.hypot(x, z - 110) < 115 || (x > -112 && x < 112 && z > -112 && z < 150)) continue;       // the village and its approach stay calm
+      if (Math.hypot(x, z - 180) < 60 || (x > -112 && x < 112 && z > -112 && z < 150)) continue;       // the village and the great plaza stay calm
       if (W.roadD && W.roadD[0] !== undefined && W.bil(W.roadD, x, z) < 4) continue;
       if (sites.some((p) => Math.hypot(p[0] - x, p[1] - z) < 28)) continue;
       if (W.bridges && W.bridges.some((b) => Math.hypot(b.x - x, b.z - z) < 20)) continue;
       if (W.camps.some((c) => Math.hypot(c.cx - x, c.cz - z) < c.r + 18)) continue;
       if (out.some((c) => Math.hypot(c.cx - x, c.cz - z) < 42)) continue;
       const zn = W.zoneAt(x, z); if (!zn) continue;
-      const tab = SCATTER[zn.biome]; if (!tab) continue;
+      const tab = zn.scatter || SCATTER[zn.biome]; if (!tab) continue;
       let u = R(), sp = tab[0][0]; for (const [id, p] of tab) { if (u < p) { sp = id; break; } u -= p; }
       out.push({ id: 'rnd_' + out.length, name: zn.name, species: sp, cx: x, cz: z, r, count: 2 + Math.floor(R() * 3) });
     }
@@ -475,6 +554,45 @@
   W.islandBump = islandBump;
   const ridged = (x, z, s, seed) => { const n = V.fbm(x / s, z / s, 3, 0, seed); return 1 - Math.abs(n * 2 - 1); };
 
+  /* ---- WALKABLE RELIEF (Metin2 logic: a mostly open plain with rolling swells and climbable hills) ----
+     The hero stays at y = 0 in the game frame; village/scene.js shifts the whole world group by -W.yBase each frame
+     (W.yBase = ground height under the hero), so every effect that is authored at "y = 0" still sits on the ground
+     next to the hero.  W.heightAt(x, z) is the TRUE height; W.frameY(x, z) = heightAt - yBase is the frame height.  */
+  W.yBase = 0;
+  /* walking height: the terrain height, except on a bridge deck (the river bed is carved far below the deck, the deck top is y = 0) */
+  W.walkY = (x, z) => {
+    if (!W.hgrid) return 0;
+    if (W.deck) { const i = Math.round((x - B.minX) / G), j = Math.round((z - B.minZ) / G); if (i >= 0 && i < NX && j >= 0 && j < NZ && W.deck[j * NX + i]) return 0; }
+    return bil(W.hgrid, x, z);
+  };
+  W.frameY = (x, z) => W.walkY(x, z) - W.yBase;
+  W.hills = W.hills || [];                  // walkable hills { x, z, r, h, k? }: profile 0 at the rim, h in the middle
+  W.pads = W.pads || [];                    // dead-flat settlement pads { x, z, r }: height stays 0 inside r, fades out over 30 m
+  W.SLOPE_MAX = 0.62;                       // steeper floor cells become non-walkable (rock faces)
+  const rectDist = (x, z, b) => { const ex = Math.max(b.minX - x, x - b.maxX), ez = Math.max(b.minZ - z, z - b.maxZ); return ex > 0 && ez > 0 ? Math.hypot(ex, ez) : Math.max(ex, ez); };
+  function hillBump(x, z) {
+    let h = 0;
+    for (const H of W.hills) {
+      const dx = x - H.x, dz = z - H.z, R = H.r * (H.rz ? 1 : 1);
+      if (dx > R * 1.3 || dx < -R * 1.3 || dz > R * 1.3 || dz < -R * 1.3) continue;
+      // slightly noisy rim so hills are never perfect cones
+      const d = Math.hypot(dx, dz) / (R * (0.9 + 0.2 * V.fbm(x / 60 + H.x, z / 60 + H.z, 2, 0, 821)));
+      if (d >= 1) continue;
+      const t = 1 - smooth(0, 1, d);
+      h = Math.max(h, H.h * Math.pow(t, H.k || 1.15));
+    }
+    return h;
+  }
+  W.hillBump = hillBump;
+  function floorRelief(x, z, s) {                      // s = signed distance (<0 inside the floor)
+    let f = smooth(2, 46, -s);                         // fades to 0 at the valley rim (mountains take over there)
+    const vd = rectDist(x, z, W.village); if (vd < 46) f *= smooth(0, 46, vd);      // the village band is dead flat
+    for (const P of W.pads) { const d = Math.hypot(x - P.x, z - P.z) - P.r; if (d < 30) f *= smooth(0, 30, d); }
+    if (f <= 0.001) return 0;
+    const n = V.fbm(x / 150 + 21.7, z / 150 - 8.3, 3, 0, 831), m = V.fbm(x / 47 + 5.1, z / 47 + 12.9, 2, 0, 833);
+    return f * ((n - 0.5) * 5.2 + (m - 0.5) * 1.1 + hillBump(x, z));
+  }
+
   W.buildHeights = function () {
     const sd = W.sd, hg = W.hgrid, riverD = W.riverD, lakeD = W.lakeD;
     for (let j = 0; j < NZ; j++) {
@@ -482,6 +600,7 @@
       for (let i = 0; i < NX; i++) {
         const k = j * NX + i, x = B.minX + i * G, s = sd[k];
         let h = 0;
+        if (s <= 0.02) h = floorRelief(x, z, s);
         if (s > 0.02) {
           const isl = islandBump(x, z);
           if (isl > 0.01) h = isl;
@@ -502,5 +621,13 @@
         hg[k] = h;
       }
     }
+    // floor cells that turned out too steep (relief noise + hills) become rock: blocked in the floor mask, collision and nav follow
+    let steep = 0;
+    for (let j = 1; j < NZ - 1; j++) for (let i = 1; i < NX - 1; i++) {
+      const k = j * NX + i; if (sd[k] > 0.02) continue;
+      const gx = (hg[k + 1] - hg[k - 1]) / (2 * G), gz = (hg[k + NX] - hg[k - NX]) / (2 * G), g = Math.hypot(gx, gz);
+      if (g > W.SLOPE_MAX) { sd[k] = Math.max(sd[k], 0.6 + (g - W.SLOPE_MAX) * 6); steep++; }
+    }
+    W.steepCells = steep;
   };
 })();

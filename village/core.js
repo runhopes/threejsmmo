@@ -10,8 +10,9 @@
  *    Village.NavGrid     0.5 m walkability grid inflated by the hero radius, A* + string pulling
  *    Village.Registry    player spawns, NPC placement points, world transitions, waypoint
  *
- *  Walkable ground is flat at y = 0 on purpose: the hero's foot IK (knight.js) plants feet at world y = 0, so all
- *  elevation lives in non-walkable places (hills beyond the boundary, plinths, raised beds, stairs with colliders).
+ *  The hero is ALWAYS at y = 0 (the foot IK in knight.js plants feet at y = 0). The village itself is flat; in the open world
+ *  (world/*.js) the ground has walkable relief and hills: village/scene.js shifts the whole world group by -World.yBase each
+ *  frame (vertical frame), so the hero stays at y = 0. True height = World.heightAt(x, z); height in the frame = World.frameY(x, z).
  * ===================================================================================================== */
 (function () {
   'use strict';

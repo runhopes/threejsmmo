@@ -39,6 +39,7 @@ try {
         : o0.clone().sub(t0).multiplyScalar(zoom).applyAxisAngle(new THREE.Vector3(0, 1, 0), orbit);
       k.set(x, 0, z); ctl.target.copy(k).add(t0); cam.position.copy(ctl.target).add(off); ctl.update();
     }, [p[0], p[1], orbit, zoom, pitch === null ? null : +pitch, dist]);
+    await page.evaluate(() => { const sel = document.getElementById('select'); if (sel) sel.style.display = 'none'; });   // class-select overlay would cover the bottom of the shot
     await page.waitForTimeout(900);
     const f = await fps(page);
     await page.screenshot({ path: path.join(out, s.replace(/[:]/g, '_') + '.png') });

@@ -119,7 +119,7 @@
     });
     const m = new T.Mesh(g, mat);
     m.renderOrder = 50; m.name = 'village_sky'; m.frustumCulled = false;
-    m.onBeforeRender = function (r, sc, cam) { this.position.copy(cam.position); this.updateMatrixWorld(); };
+    m.onBeforeRender = function (r, sc, cam) { this.position.copy(cam.position); if (this.parent) this.position.y -= this.parent.position.y; this.updateMatrixWorld(); };   // (vertical frame: cancel the group's -yBase shift)
     return m;
   }
 
