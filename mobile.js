@@ -43,21 +43,27 @@
   // ---- virtual joystick -> WASD ----
   const joy = document.createElement('div'); joy.id = 'm-joy'; joy.innerHTML = '<i></i>'; document.body.appendChild(joy);
   const knob = joy.firstChild;
-  let joyId = null;
-  // joystick up = away from the camera; the vector is turned into a world direction using the camera's heading
+  let joyId = null, basis = null;
+  // joystick up = away from the camera; the vector is turned into a world direction using the camera's heading AT TOUCH-DOWN.
+  // (A live basis made a feedback loop: stick right -> hero turns -> camera swings behind him -> "right" is a new direction -> the hero
+  //  spun on the spot at the camera's turn rate. Latching it for the duration of the touch makes the stick direction stable.)
+  function latchBasis() {
+    const cam = window.__camera, tg = window.__controls.target;
+    let fx = tg.x - cam.position.x, fz = tg.z - cam.position.z; const fl = Math.hypot(fx, fz) || 1;
+    basis = { x: fx / fl, z: fz / fl };
+  }
   function joyMove(e) {
     const r = joy.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, R = r.width / 2;
     let dx = e.clientX - cx, dy = e.clientY - cy; const l = Math.hypot(dx, dy) || 1, k = Math.min(1, l / R);
     dx = dx / l * k; dy = dy / l * k;
     knob.style.transform = 'translate(' + dx * R * 0.6 + 'px,' + dy * R * 0.6 + 'px)';
     if (k < 0.22 || !window.__mobile) { window.__mobile && (window.__mobile.mv = null); return; }
-    const cam = window.__camera, tg = window.__controls.target;
-    let fx = tg.x - cam.position.x, fz = tg.z - cam.position.z; const fl = Math.hypot(fx, fz) || 1; fx /= fl; fz /= fl;
-    const rx = -fz, rz = fx, wx = fx * -dy + rx * dx, wz = fz * -dy + rz * dx, wl = Math.hypot(wx, wz) || 1;
+    if (!basis) latchBasis();
+    const fx = basis.x, fz = basis.z, rx = -fz, rz = fx, wx = fx * -dy + rx * dx, wz = fz * -dy + rz * dx, wl = Math.hypot(wx, wz) || 1;
     window.__mobile.mv = { x: wx / wl, z: wz / wl };
   }
-  function joyEnd() { joyId = null; knob.style.transform = ''; if (window.__mobile) window.__mobile.mv = null; }
-  joy.addEventListener('pointerdown', (e) => { joyId = e.pointerId; joy.setPointerCapture(e.pointerId); joyMove(e); e.preventDefault(); });
+  function joyEnd() { joyId = null; basis = null; knob.style.transform = ''; if (window.__mobile) window.__mobile.mv = null; }
+  joy.addEventListener('pointerdown', (e) => { joyId = e.pointerId; latchBasis(); joy.setPointerCapture(e.pointerId); joyMove(e); e.preventDefault(); });
   joy.addEventListener('pointermove', (e) => { if (e.pointerId === joyId) joyMove(e); });
   joy.addEventListener('pointerup', (e) => { if (e.pointerId === joyId) joyEnd(); });
   joy.addEventListener('pointercancel', joyEnd);
@@ -87,7 +93,7 @@
   fire.addEventListener('pointerup', fireEnd); fire.addEventListener('pointercancel', fireEnd);
 
   // camera: fixed far-medium MMO pitch / distance (no zoom, no finger rotation); while the joystick moves the hero the camera
-  // swings round behind the direction the hero is facing
+  // eases round behind the direction the hero is facing (slowly; the stick basis is latched per touch)
   const ctl = window.__controls;
   if (ctl) {
     ctl.enableRotate = false; ctl.enableZoom = false; ctl.enablePan = false;
@@ -102,7 +108,9 @@
       if (!mb || !mb.mv || !k || !cam) return;
       const tg = ctl.target, ox = cam.position.x - tg.x, oz = cam.position.z - tg.z;
       const cur = Math.atan2(ox, oz), want = k.root.rotation.y + Math.PI;
-      const d = Math.atan2(Math.sin(want - cur), Math.cos(want - cur)), a = Math.max(-2.4 * dt, Math.min(2.4 * dt, d));
+      // gentle follow: soft dead zone (~17°) so small heading changes don't swing the view, proportional ease, ≤ 0.9 rad/s
+      let d = Math.atan2(Math.sin(want - cur), Math.cos(want - cur)); d = Math.sign(d) * Math.max(0, Math.abs(d) - 0.3);
+      const a = Math.max(-0.9 * dt, Math.min(0.9 * dt, d * 1.6 * dt));
       const c = Math.cos(a), s = Math.sin(a);
       cam.position.set(tg.x + ox * c + oz * s, cam.position.y, tg.z + oz * c - ox * s);
     })(last);
