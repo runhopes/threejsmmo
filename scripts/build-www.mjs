@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'www');
 const FILES = ['index.html', 'privacy.html', 'hud.css', 'textures.js', 'locomotion.js', 'heromodel.js', 'knight.js', 'hud.js', 'mobile.js', 'perf.js'];
-const DIRS = ['app', 'ui', 'fonts', 'vendor', 'creatures', 'village', 'world', 'vfx', 'magefx'];
+const DIRS = ['app', 'ui', 'fonts', 'vendor', 'creatures', 'village', 'world', 'vfx', 'magefx', 'audio'];
 const SKIP = new Set(['.md']);
 
 rmSync(OUT, { recursive: true, force: true });

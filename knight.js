@@ -2143,6 +2143,7 @@
       this.trail.mat.uniforms.uColor.value.setHex(def.trailColor || 0xbfe4ff);
       if (def.attack) this.sinceAttack = 0;
       this._fx(null, 0);
+      this._emit({ type: 'start', name, def, rate: this.action.rate, skip: opts.skip || 0 });   // an action began: audio/sfx.js schedules its sound from the timeline
     }
 
     revive() { this.dead = false; this.action = null; this.buffered = false; this.trail.clear(); }

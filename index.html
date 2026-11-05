@@ -81,6 +81,7 @@
 <script src="locomotion.js"></script>
 <script src="heromodel.js"></script>
 <script src="knight.js"></script>
+<script src="audio/sfx.js"></script><!-- combat / character sounds (Atherion's clips + mix rules): audio/README.md -->
 <!-- Atherion UI parts (ui/*.js): load before hud.js, which swaps its built-in components for them -->
 <script src="ui/cursor.js"></script>
 <script src="ui/paint.js"></script>
@@ -698,7 +699,9 @@
   function sfx(id, detail) { if (id) window.dispatchEvent(new CustomEvent('knight-sfx', { detail: Object.assign({ id }, detail || {}) })); }
   const shakeDir = new THREE.Vector3();
 
+  if (window.Sfx) Sfx.init({ camera, listener: () => knight.root.position });                 // audio/sfx.js: Atherion's character / combat sounds
   const onHeroEvent = (e) => {
+    if (window.Sfx && !selecting) Sfx.onHeroEvent(e, knight);                                   // sword swing / bow release / spell sounds from the event timeline
     if (selecting) { if (e.type === 'footplant') return; }
     const kp = knight.root.position, yw = knight.root.rotation.y;
     const fx = Math.sin(yw), fz = Math.cos(yw);
@@ -810,11 +813,13 @@
         if (P.style === 'poison') { const D = { tg, n: 5, every: 1, t: 1, dmg: 42, cls: 'poison', anchor: poisonAnchor(tg) }; dots.push(D); AV.poison(D.anchor, 5); }
         shake = Math.max(shake, pass ? 0.09 : 0.05); punch = Math.max(punch, 0.2);
         sfx('arrow_hit');
+        if (window.Sfx && isCreature(tg)) Sfx.arrowHit({ x: hit.point.x, z: hit.point.z });     // audio: arrow_hit ON TOP of the creature's own hit sounds
       },
       targetsIn: (c, r) => knight.hitTargets.filter((tg) => (!tg.alive || tg.alive()) && Math.hypot(tg.pos.x - c.x, tg.pos.z - c.z) < r + (tg.radius || 0.4) * 0.5),
       onRainWave(c, r) { areaDamage(c, r, 42, { y: 2.6 }); sfx('arrow_rain'); },
       light(p, hex, k) { blastLight.color.setHex(hex); blastLight.position.copy(p).setY(Math.max(0.6, p.y)); blastI = Math.max(blastI, k); },
       shake(s) { shake = Math.max(shake, s); },
+      event(type, d) { if (type === 'impact' && d.style === 'rain' && window.Sfx && d.point) Sfx.rainHit({ x: d.point.x, z: d.point.z }); },   // audio: arrow rain landings (thinned out, -8 dB)
     },
   });
   if (VW && VW.World) AV.groundY = fY;                          // arrows stop on the real terrain (vertical frame), not the y = 0 plane
@@ -844,6 +849,7 @@
       r: IFX.bodyRadius(h), surf: Math.max(0.25, rad * 0.6), depth: rad + 0.1,
       point: kind === 'blade' ? null : opts.at || null, from: knight.root.position, kind, heavy, crit,
       flash: view ? (d, s) => view.flash(d, s) : null });
+    return heavy;                                                                              // (audio: the knock-down layer follows the SAME flag as the visual)
   }
   const ARROW_STYLE = { pierce: 'pierce', fire: 'fire', poison: 'poison', rapid: 'rapid' };
   function fireArrows(def, kind, mul, extra) {
@@ -1460,7 +1466,8 @@
       if (!res || !res.ok) return 0;                              // already dead / out of range: nothing happened
       const C = tg.creature;
       targetSel = 'cr:' + C.id;
-      impactHit(tg, crit, opts, !!res.killed);                   // impact: Atherion MobHitFx (every accepted hit, the killing blow too)
+      const heavyHit = impactHit(tg, crit, opts, !!res.killed);
+      if (window.Sfx && !(opts.noCrit && !res.killed)) Sfx.mobHit({ x: tg.pos.x, z: tg.pos.z }, !!res.killed, !!heavyHit);   // audio: hit cut + punch (+ flesh), or the death layers (DoT ticks stay silent)                   // impact: Atherion MobHitFx (every accepted hit, the killing blow too)
       // damage_number.gd: born MOB_HIT_HEIGHT (6 u) above the struck body's feet, plain digits (str(int(amount)))
       hud.combatText({ x: tg.pos.x, y: (tg.pos.y || 0) + IFX.NUMBER_Y, z: tg.pos.z }, String(dmg), crit ? 'crit' : (opts.cls || 'dmg'));
       hud.logLine('combat', C.D.name + ' · ' + fmt(dmg) + ' hasar' + (crit ? ' · kritik' : opts.cls === 'poison' ? ' · zehir' : ''), crit ? 'crit' : opts.cls === 'poison' ? 'dot' : 'dmg');
