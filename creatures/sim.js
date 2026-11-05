@@ -322,7 +322,11 @@
       // tracking: turn toward the target during anticipation / wind-up, the strike direction locks at the active start
       if (p && u < a.phases.wu) { this._face(c, p.x, p.z, dt * (a.charge ? 1.6 : 1.2)); A.yaw = c.yaw; A.tx = p.x; A.tz = p.z; }
       // authoritative root motion along the locked facing (never through the target)
-      const s1 = DEFS.lungeAt(a, u), ds = s1 - A.lungeDone;
+      // a charge that connected stops where it is (a short skid only): A.t is pushed to the follow-out phase on impact, which used to make
+      // lungeAt jump to the full distance and the creature crossed the whole remaining run (up to 6-9 m) in ONE frame = it teleported through the hero
+      let s1 = DEFS.lungeAt(a, u);
+      if (A.stopped) { const sk = Math.min(A.skid, 5 * dt); A.skid -= sk; A.lungeDone += sk; s1 = A.lungeDone; }
+      const ds = s1 - A.lungeDone;
       if (ds !== 0) {
         let step = ds;
         if (p && !a.charge && ds > 0) {
@@ -344,7 +348,7 @@
           let dmg = DEFS.damageFor(c.sp, A.id, c.level, this.R());
           if (c.enraged) dmg = Math.round(dmg * 1.25);
           this.events.push({ type: 'hit', id: c.id, attack: A.id, target: pl.id, damage: dmg, heavy: !!a.heavy, dirX: Math.sin(c.yaw), dirZ: Math.cos(c.yaw) });
-          if (a.charge) A.t = Math.max(A.t, a.phases.fo * a.dur);    // a charge stops on impact
+          if (a.charge && !A.stopped) { A.stopped = true; A.skid = 0.5; A.t = Math.max(A.t, a.phases.fo * a.dur); }    // a charge stops on impact
         }
       }
       if (u >= 1) {

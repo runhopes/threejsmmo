@@ -293,7 +293,24 @@
       return authority.applyDamage(rec.id, amount, Object.assign({ pid: PLAYER }, src || {}));
     }
     // a bone to stick arrows into (follows the animated body)
-    function attachPoint(tg) { const e = tg.entry; return e ? e.view.bones[e.view.tpl.idx.body] : null; }
+    /* a bone to stick arrows into (follows the animated body). With the hit point: the NEAREST bone (legs, tail, a snake's whole coil move on their own;
+       one fixed 'body' bone left arrows hanging in the air next to a long slithering body). Snakes: the hit test is a vertical capsule on the root,
+       the visible body is a 2.6 m curve elsewhere, so the point is also snapped onto that bone (tip just under the skin). dir = flight direction (unit). */
+    const _bp = new T.Vector3();
+    function attachPoint(tg, point, dir) {
+      const e = tg.entry; if (!e) return null;
+      const B = e.view.bones, names = e.view.tpl.names, body = B[e.view.tpl.idx.body];
+      if (!point) return body;
+      let best = body, bd = 1e9, bx = 0, by = 0, bz = 0;
+      for (let i = 0; i < B.length; i++) {
+        const b = B[i]; if (!b || /jaw|tongue/.test(names[i])) continue;
+        b.getWorldPosition(_bp); const d = _bp.distanceToSquared(point);
+        if (d < bd) { bd = d; best = b; bx = _bp.x; by = _bp.y; bz = _bp.z; }
+      }
+      const rec = tg.creature;
+      if (rec && rec.sp && rec.sp.indexOf('snake') === 0) { point.set(bx, by, bz); if (dir) point.addScaledVector(dir, -0.04); }
+      return best;
+    }
 
     return {
       authority, server, group, hooks, update, pick, nearest, info, markers, zoneAt, damage, attachPoint, pin, unpin, unpinAll,

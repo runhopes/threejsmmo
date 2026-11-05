@@ -554,9 +554,20 @@
     if (VW && key && key.startsWith('vt:')) { const t = VW.trainingTarget(key); return t ? { x: t.pos.x, z: t.pos.z, r: t.radius, y: t.aimY } : null; }   // village training dummies / butts
     if (key === 'dummy') return dummy.g.visible ? { x: dummy.g.position.x, z: dummy.g.position.z, r: 0.42, y: 1.4 } : null;
     const c = creatures && creatures.byKey(key);
-    return c && c.alive && !c.despawned ? { x: c.x, z: c.z, r: c.D.radius, y: fY(c.x, c.z) + Math.min(1.4, Math.max(0.35, c.D.height * 0.55)), rec: c } : null;
+    return c && c.alive && !c.despawned ? { x: c.x, z: c.z, r: c.D.radius, front: c.D.front || c.D.radius, y: fY(c.x, c.z) + Math.min(1.4, Math.max(0.35, c.D.height * 0.55)), rec: c } : null;
   }
-  const engageGap = (T) => Math.hypot(T.x - knight.root.position.x, T.z - knight.root.position.z) - T.r;
+  /* edge gap to the target. creatures/sim.js _separate holds the hero at (radius + (front - radius) * facing + 0.45) * 0.85 from a creature's centre:
+     for long bodies (stag antlers, bear / wolf snouts) that is MORE than radius + ATTACK_RANGE, so the hero never counted as 'in range' and kept
+     running into the creature, pushing it ahead of him instead of striking. Count the push-out distance as contact. */
+  const engageGap = (T) => {
+    const kp = knight.root.position, dx = T.x - kp.x, dz = T.z - kp.z, d = Math.hypot(dx, dz);
+    let extra = 0;
+    if (T.rec && T.front > T.r && d > 1e-6) {
+      const fwd = Math.max(0, -(Math.sin(T.rec.yaw) * dx + Math.cos(T.rec.yaw) * dz) / d);         // 1 = the hero stands in front of the creature's head (dx, dz = creature - hero, as in sim.js)
+      extra = Math.max(0, (T.r + (T.front - T.r) * fwd + 0.45) * 0.85 - T.r - 0.5);
+    }
+    return d - T.r - extra;
+  };
   function strikeAt(T) {                                          // face the target, aim, one basic attack (combo continues)
     const kp = knight.root.position;
     if (!knight.action) { yaw = Math.atan2(T.x - kp.x, T.z - kp.z); knight.root.rotation.y = yaw; }   // mid-swing: soft auto-aim turns
@@ -748,7 +759,7 @@
       bd = along;
       const cr = isCreature(tg), point = _aca.clone().addScaledVector(_ad, -r * 0.6);
       if (cr) point.y = Math.min(point.y, tg.bodyHeight * 0.7);
-      best = { point, target: tg, surface: cr ? 'flesh' : 'wood', attach: cr ? creatures.attachPoint(tg) : (tg.piv || dummy.piv), stick: cr && tg.bodyHeight < 0.9 ? 0.01 : 2.5 };   // creatures: small ones do not hold arrows
+      best = { point, target: tg, surface: cr ? 'flesh' : 'wood', attach: cr ? creatures.attachPoint(tg, point, _ad) : (tg.piv || dummy.piv), stick: cr && tg.bodyHeight < 0.9 ? 0.01 : 2.5 };   // creatures: small ones do not hold arrows
     }
     if (VW) { const wh = VW.projectileHit(a, b); if (wh && wh.point.distanceTo(a) < bd) best = { point: wh.point.clone(), surface: VSURF[wh.shape.tag] || 'stone', stick: 4 }; }   // village: walls, roofs, trunks, posts
     return best;
