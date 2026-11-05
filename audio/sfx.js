@@ -72,7 +72,9 @@
       const an = Sfx._an = ctx.createAnalyser(); an.fftSize = 512;            // (tests read the output level)
       master.connect(an); master.connect(ctx.destination);
       const unlock = () => { if (ctx.state === 'suspended') ctx.resume().catch(() => {}); };
-      for (const ev of ['pointerdown', 'keydown', 'touchstart']) global.addEventListener(ev, unlock, { passive: true });
+      // [mobile] iOS only lets touchend / click start audio, and the touch layer (mobile.js) stops world pointerdowns in the capture
+      // phase: listen in the capture phase too, on every gesture kind
+      for (const ev of ['pointerdown', 'keydown', 'touchstart', 'touchend', 'click']) global.addEventListener(ev, unlock, { passive: true, capture: true });
       Sfx._load();
     } catch (e) { Sfx._ctx = null; }
     return Sfx;
