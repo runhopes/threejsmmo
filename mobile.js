@@ -1,7 +1,7 @@
 /* Mobile / touch layer (loaded last by index.html, active only on touch devices or with ?mobile=1).
  *  - virtual joystick (bottom-left, camera-relative); NO tap-to-move on touch. Holding a finger on the world turns the hero toward it;
  *    the fire button (right) attacks the nearest creature in reach (runs to it), else shoots / swings toward the facing; hold = keep attacking
- *  - camera: fixed far-medium pitch / distance, no zoom, no finger rotation; it follows the hero's heading while the joystick moves him
+ *  - camera: MOBA style — fixed distance; a swipe on the world tilts / turns it (kept per device); it rides the hero
  *  - HUD scaled to the screen, portrait hint, fullscreen button. The game logic itself is untouched. */
 (function () {
   'use strict';
@@ -21,10 +21,27 @@
     '#m-fs { position: fixed; right: 10px; top: 10px; width: 38px; height: 38px; border-radius: 8px; background: rgba(20,24,30,.55); color: #e8d9a8; border: 1px solid rgba(220,200,150,.5); font: 20px/36px system-ui; text-align: center; z-index: 60; }',
     '#m-rot { position: fixed; inset: 0; background: #11161c; color: #e8d9a8; z-index: 200; display: none; align-items: center; justify-content: center; text-align: center; font: 600 20px/1.5 system-ui; padding: 30px; }',
     '.is-mobile .hud-tip { display: none !important; }',
-    '.is-mobile .hud-chat { display: none !important; }',
     '@media (orientation: portrait) { #m-rot { display: flex; } }',
+    /* notch / dynamic island / home indicator: keep the HUD and the touch controls inside the safe area (canvas stays full-bleed) */
+    /* (#hud-root stays full-screen: name plates / combat numbers are drawn in screen coordinates on its canvases — insetting the root
+       shifted them off their heads. Each HUD piece applies the safe area itself, see ui/mobilehud.css) */
+    'html.is-mobile #m-joy { left: calc(18px + env(safe-area-inset-left)); bottom: calc(18px + env(safe-area-inset-bottom)); }',
+    'html.is-mobile #m-fire { right: calc(26px + env(safe-area-inset-right)); }',
+    'html.is-mobile #m-fs { right: calc(10px + env(safe-area-inset-right)); }',
+    'html.is-mobile #at-screen { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }',
+    /* native app (Capacitor): orientation is locked to landscape by the app itself, no browser fullscreen API */
+    'html.is-native #m-fs, html.is-native #m-rot { display: none !important; }',
+    /* login / character screens: no joystick or fire button on top of the forms */
+    'body:has(#at-screen:not([hidden])) #m-joy, body:has(#at-screen:not([hidden])) #m-fire { display: none !important; }',
   ].join('\n');
   document.head.appendChild(css);
+
+  // native app: hide the status bar (iOS + Android), keep the hero facing the screen
+  const NATIVE = !!(window.AtherionConfig && window.AtherionConfig.NATIVE), P = window.Capacitor && window.Capacitor.Plugins;
+  if (NATIVE && P) {
+    try { P.StatusBar && P.StatusBar.hide(); } catch (_) {}
+    try { P.ScreenOrientation && P.ScreenOrientation.lock({ orientation: 'landscape' }); } catch (_) {}
+  }
 
   const rot = document.createElement('div'); rot.id = 'm-rot'; rot.innerHTML = 'Telefonu yatay çevir<br><small style="font-weight:400;opacity:.8">Oyun yatay ekranda oynanır</small>'; document.body.appendChild(rot);
   const fs = document.createElement('div'); fs.id = 'm-fs'; fs.textContent = '⛶';
@@ -43,44 +60,75 @@
   // ---- virtual joystick -> WASD ----
   const joy = document.createElement('div'); joy.id = 'm-joy'; joy.innerHTML = '<i></i>'; document.body.appendChild(joy);
   const knob = joy.firstChild;
-  let joyId = null, basis = null;
-  // joystick up = away from the camera; the vector is turned into a world direction using the camera's heading AT TOUCH-DOWN.
-  // (A live basis made a feedback loop: stick right -> hero turns -> camera swings behind him -> "right" is a new direction -> the hero
-  //  spun on the spot at the camera's turn rate. Latching it for the duration of the touch makes the stick direction stable.)
-  function latchBasis() {
+  let joyId = null, stick = null;
+  // joystick up = away from the camera. The stick vector is turned into a world direction EVERY FRAME from the camera's current
+  // heading (see the follow loop below), so turning the view with a swipe while walking turns the walk with it. (The camera never
+  // swings round by itself any more, so the old feedback loop — stick right -> hero turns -> camera follows -> hero spins — is gone.)
+  function stickDir() {
+    if (!stick || !window.__mobile) return;
     const cam = window.__camera, tg = window.__controls.target;
-    let fx = tg.x - cam.position.x, fz = tg.z - cam.position.z; const fl = Math.hypot(fx, fz) || 1;
-    basis = { x: fx / fl, z: fz / fl };
+    let fx = tg.x - cam.position.x, fz = tg.z - cam.position.z; const fl = Math.hypot(fx, fz) || 1; fx /= fl; fz /= fl;
+    const rx = -fz, rz = fx, wx = fx * -stick.dy + rx * stick.dx, wz = fz * -stick.dy + rz * stick.dx, wl = Math.hypot(wx, wz) || 1;
+    window.__mobile.mv = { x: wx / wl, z: wz / wl };
   }
   function joyMove(e) {
     const r = joy.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, R = r.width / 2;
     let dx = e.clientX - cx, dy = e.clientY - cy; const l = Math.hypot(dx, dy) || 1, k = Math.min(1, l / R);
     dx = dx / l * k; dy = dy / l * k;
     knob.style.transform = 'translate(' + dx * R * 0.6 + 'px,' + dy * R * 0.6 + 'px)';
-    if (k < 0.22 || !window.__mobile) { window.__mobile && (window.__mobile.mv = null); return; }
-    if (!basis) latchBasis();
-    const fx = basis.x, fz = basis.z, rx = -fz, rz = fx, wx = fx * -dy + rx * dx, wz = fz * -dy + rz * dx, wl = Math.hypot(wx, wz) || 1;
-    window.__mobile.mv = { x: wx / wl, z: wz / wl };
+    if (k < 0.22 || !window.__mobile) { stick = null; window.__mobile && (window.__mobile.mv = null); return; }
+    stick = { dx, dy }; stickDir();
   }
-  function joyEnd() { joyId = null; basis = null; knob.style.transform = ''; if (window.__mobile) window.__mobile.mv = null; }
-  joy.addEventListener('pointerdown', (e) => { joyId = e.pointerId; latchBasis(); joy.setPointerCapture(e.pointerId); joyMove(e); e.preventDefault(); });
+  function joyEnd() { joyId = null; stick = null; knob.style.transform = ''; if (window.__mobile) window.__mobile.mv = null; }
+  joy.addEventListener('pointerdown', (e) => { joyId = e.pointerId; joy.setPointerCapture(e.pointerId); joyMove(e); e.preventDefault(); });
   joy.addEventListener('pointermove', (e) => { if (e.pointerId === joyId) joyMove(e); });
   joy.addEventListener('pointerup', (e) => { if (e.pointerId === joyId) joyEnd(); });
   joy.addEventListener('pointercancel', joyEnd);
 
+  // ---- camera settings (MOBA view): polar = angle from straight down; 0.90 rad ≈ 38° above the ground. Kept per device. ----
+  // az = camera heading around the hero (0 = camera on the +z side looking toward -z; a horizontal swipe turns it)
+  const CAM = { dist: 19.5, polar: 0.90, az: 0, ahead: 1.6, lookY: 1.2, MIN: 0.50, MAX: 1.20 };
+  const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  try {
+    const sv = JSON.parse(localStorage.getItem('tds.mobile.cam') || 'null');
+    if (sv && isFinite(sv.polar)) CAM.polar = Math.max(CAM.MIN, Math.min(CAM.MAX, sv.polar));
+    if (sv && isFinite(sv.az)) CAM.az = wrapA(sv.az);
+  } catch (_) {}
+  function applyCam() { const c = window.__controls; if (!c) return; c.minDistance = c.maxDistance = CAM.dist; c.minPolarAngle = c.maxPolarAngle = CAM.polar; c.minAzimuthAngle = c.maxAzimuthAngle = CAM.az; }
+  function setPolar(v) { CAM.polar = Math.max(CAM.MIN, Math.min(CAM.MAX, v)); applyCam(); }
+  function setAz(v) { CAM.az = wrapA(v); applyCam(); }
+  function saveCam() { try { localStorage.setItem('tds.mobile.cam', JSON.stringify({ polar: +CAM.polar.toFixed(3), az: +CAM.az.toFixed(3) })); } catch (_) {} }
+  window.__mobileCam = { get: () => CAM.polar, getAz: () => CAM.az, set: (v) => { setPolar(v); saveCam(); }, setAz: (v) => { setAz(v); saveCam(); } };
+
   // ---- the world: NO tap-to-move on touch. Holding a finger turns the hero toward it; the fire button attacks ----
   const rc = new THREE.Raycaster(), nd = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
-  let worldId = null;
+  let worldId = null, wy0 = 0, wx0 = 0, wCam = false, wPolar0 = 0, wAz0 = 0, aimT = 0, aiming = false, lastE = null;
   function aimAt(e) {
     const r = canvas.getBoundingClientRect(); nd.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     rc.setFromCamera(nd, window.__camera); if (rc.ray.intersectPlane(plane, hit) && window.__mobile) window.__mobile.aim(hit.x, hit.z);
   }
+  // a finger on the world: a SWIPE moves the camera — vertical tilts it (drag down = steeper / more top-down, up = flatter), horizontal
+  // turns it round the hero; a finger that stays put (> 140 ms) instead turns the hero toward it. The view is kept (localStorage).
   window.addEventListener('pointerdown', (e) => {
     if (e.pointerType !== 'touch' || e.target !== canvas || worldId !== null) return;
-    worldId = e.pointerId; e.stopPropagation(); e.preventDefault(); aimAt(e);
+    worldId = e.pointerId; wx0 = e.clientX; wy0 = e.clientY; wCam = false; aiming = false; lastE = e;
+    e.stopPropagation(); e.preventDefault();
+    clearTimeout(aimT); aimT = setTimeout(() => { if (worldId !== null && !wCam) { aiming = true; aimAt(lastE); } }, 140);
   }, true);
-  window.addEventListener('pointermove', (e) => { if (e.pointerType === 'touch' && e.pointerId === worldId) { e.stopPropagation(); aimAt(e); } }, true);
-  const end = (e) => { if (e.pointerType === 'touch' && e.pointerId === worldId) { worldId = null; e.stopPropagation(); } };
+  window.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'touch' || e.pointerId !== worldId) return;
+    e.stopPropagation(); lastE = e;
+    const dx = e.clientX - wx0, dy = e.clientY - wy0;
+    if (!wCam && !aiming && Math.hypot(dx, dy) > 12) { wCam = true; clearTimeout(aimT); wx0 = e.clientX; wy0 = e.clientY; wPolar0 = CAM.polar; wAz0 = CAM.az; }
+    if (wCam) { setPolar(wPolar0 - (e.clientY - wy0) * 0.0028); setAz(wAz0 - (e.clientX - wx0) * 0.006); }
+    else if (aiming) aimAt(e);
+  }, true);
+  const end = (e) => {
+    if (e.pointerType !== 'touch' || e.pointerId !== worldId) return;
+    clearTimeout(aimT);
+    if (!wCam && !aiming && lastE) aimAt(lastE);                     // a quick tap still turns the hero
+    worldId = null; if (wCam) saveCam(); wCam = false; aiming = false; e.stopPropagation();
+  };
   window.addEventListener('pointerup', end, true); window.addEventListener('pointercancel', end, true);
   document.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -92,28 +140,25 @@
   const fireEnd = (e) => { if (e.pointerId !== fireId) return; fireId = null; fire.classList.remove('on'); clearInterval(fireTimer); if (window.__mobile) window.__mobile.hold(false); };
   fire.addEventListener('pointerup', fireEnd); fire.addEventListener('pointercancel', fireEnd);
 
-  // camera: fixed far-medium MMO pitch / distance (no zoom, no finger rotation); while the joystick moves the hero the camera
-  // eases round behind the direction the hero is facing (slowly; the stick basis is latched per touch)
+  // camera: MOBA style (Mobile Legends-like) — the heading never swings by itself; ~38° view; a swipe on the world tilts (vertical) /
+  // turns (horizontal) it (CAM, kept per device); fixed distance, no zoom; it rides the hero with the look point a little ahead so the hero sits just below the screen centre.
+  // The joystick reads the camera heading every frame (stick up = away from the camera).
   const ctl = window.__controls;
   if (ctl) {
     ctl.enableRotate = false; ctl.enableZoom = false; ctl.enablePan = false;
     ctl.touches = { ONE: -1, TWO: -1 };
-    ctl.minDistance = ctl.maxDistance = 15.5;
-    ctl.minPolarAngle = ctl.maxPolarAngle = 0.92;
-    let last = performance.now();
-    (function follow(t) {
+    applyCam();
+    const want = new THREE.Vector3(), d = new THREE.Vector3();
+    (function follow() {
       requestAnimationFrame(follow);
-      const dt = Math.min(0.05, (t - last) / 1000); last = t;
-      const mb = window.__mobile, k = window.__knight, cam = window.__camera;
-      if (!mb || !mb.mv || !k || !cam) return;
-      const tg = ctl.target, ox = cam.position.x - tg.x, oz = cam.position.z - tg.z;
-      const cur = Math.atan2(ox, oz), want = k.root.rotation.y + Math.PI;
-      // gentle follow: soft dead zone (~17°) so small heading changes don't swing the view, proportional ease, ≤ 0.9 rad/s
-      let d = Math.atan2(Math.sin(want - cur), Math.cos(want - cur)); d = Math.sign(d) * Math.max(0, Math.abs(d) - 0.3);
-      const a = Math.max(-0.9 * dt, Math.min(0.9 * dt, d * 1.6 * dt));
-      const c = Math.cos(a), s = Math.sin(a);
-      cam.position.set(tg.x + ox * c + oz * s, cam.position.y, tg.z + oz * c - ox * s);
-    })(last);
+      const k = window.__knight, cam = window.__camera;
+      if (!k || !cam) return;
+      want.set(k.root.position.x - Math.sin(CAM.az) * CAM.ahead, CAM.lookY, k.root.position.z - Math.cos(CAM.az) * CAM.ahead);   // look a little ahead along the view
+      d.subVectors(want, ctl.target);
+      if (d.lengthSq() > 1e-6) { ctl.target.add(d); cam.position.add(d); }
+      ctl.update();
+      stickDir();                                                  // a held stick follows the view as it turns
+    })();
   }
   addEventListener('resize', fit); addEventListener('orientationchange', fit);
   setInterval(fit, 1500); fit();

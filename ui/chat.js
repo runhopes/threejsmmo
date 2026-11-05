@@ -68,7 +68,9 @@
 
   const TAB_FONT = P.F.cinzel(600, TAB_FS), KEY_FONT = P.F.cinzel(600, HINT_KEY_FS);
   const MSG_FONT = P.F.serif(500, MSG_FS), MSG_BOLD = P.F.serif(700, MSG_FS);
-  const HINT_KEY = 'Enter', HINT_TEXT = 'Mesajını yaz...';
+  // [mobile HUD] touch screens have no Enter key: the hint chip reads "Sohbet" and a tap opens typing mode
+  const TOUCH = !!(global.matchMedia && global.matchMedia('(pointer: coarse)').matches);
+  const HINT_KEY = TOUCH ? 'Sohbet' : 'Enter', HINT_TEXT = 'Mesajını yaz...';
   const quartOut = (t) => 1 - Math.pow(1 - Math.max(0, Math.min(1, t)), 4);
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const pad2 = (n) => (n < 10 ? '0' : '') + n;
@@ -346,6 +348,10 @@
     });
     inp.addEventListener('blur', () => { if (D.hasFocus()) closeChat(); });   // alt-tab keeps typing mode; any other focus loss closes
     hintHit.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); if (e.button === 0) openChat(); });
+    // [mobile HUD] tap: open on touchend (a user gesture, so iOS shows the keyboard); preventDefault stops the emulated mouse events,
+    // whose default focus change would blur the input and close the chat again
+    hintHit.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); }, { passive: false });
+    hintHit.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); openChat(); }, { passive: false });
     // drag: typing mode only, the whole plate is the handle (chat_view._on_drag_handle_input)
     plateHit.addEventListener('mousedown', (e) => { e.preventDefault(); if (e.button === 0 && open) drag = { x: e.clientX, y: e.clientY, dx: dragX, dy: dragY }; });
     addEventListener('mousemove', (e) => {

@@ -95,6 +95,7 @@
       const m = new T.Mesh(g, teleMat()); m.rotation.x = -Math.PI / 2; m.renderOrder = 6; m.visible = false; scene.add(m);
       const edge = new T.Mesh(kind === 'line' ? new T.EdgesGeometry(g) : new T.RingGeometry(0.97, 1, 56, 1, kind === 'cone' ? Math.PI / 2 - 0.95 : 0, kind === 'cone' ? 1.9 : Math.PI * 2), teleMat());
       if (kind !== 'line') { edge.rotation.x = 0; m.add(edge); }
+      if (window.VfxConform) { window.VfxConform.attach(m, { lift: 0.04, seg: 10, radial: 8 }); if (kind !== 'line') window.VfxConform.attach(edge, { lift: 0.045 }); }   // [conform] telegraphs lie on slopes (vfx/conform.js)
       tele[kind] = { m, edge, t: 0, life: 0, rec: null };
       return tele[kind];
     }

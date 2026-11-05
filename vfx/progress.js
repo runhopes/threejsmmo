@@ -258,6 +258,7 @@
       const mat = new T.ShaderMaterial({ vertexShader: AREA_VS, fragmentShader: AREA_FS, transparent: true, depthWrite: false, side: T.DoubleSide,
         uniforms: { uTime: { value: 0 }, uAlpha: { value: 0 }, uMode: { value: mode }, uP: { value: new T.Vector4(P[0], P[1], P[2], P[3]) } } });
       const m = new T.Mesh(geo, mat); m.position.y = y; m.scale.set(sx, sy, sx); m.renderOrder = order || 20;
+      if (geo.type === 'PlaneGeometry' && global.VfxConform) global.VfxConform.attach(m, { seg: 12 });   // [conform] level-up ground quads lie on slopes
       return m;
     }
     const L = { root: new T.Group(), parts: [], t: -1, target: null };

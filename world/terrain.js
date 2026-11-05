@@ -380,7 +380,8 @@
   'use strict';
   const T = THREE, V = window.Village, W = V && V.World;
   if (!W || !W.on) return;
-  const CULL_DIST = 205, CULL_TERRAIN = 470;     // terrain stays longer: its far edge would show the sky dome's dark underside
+  // [perf] phones: the MOBA camera sees ~60 m ahead at its default tilt; 130 m still covers the flattest tilt the swipe allows
+  const CULL_DIST = window.__MOBILE ? 130 : 205, CULL_TERRAIN = 470;     // terrain stays longer: its far edge would show the sky dome's dark underside
   let list = [], t = 0, off = false;
   W.registerCull = function (group) {
     list = [];

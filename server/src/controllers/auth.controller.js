@@ -20,6 +20,7 @@ module.exports = (app) => {
   app.post('/api/register', open((req) => service.register(req.body || {})));
   app.post('/api/login', open((req) => service.login(req.body || {})));
   app.post('/api/logout', secure((req) => { service.logout(req.auth.token); return { ok: true }; }));
+  app.post('/api/me/delete', secure((req) => { service.deleteAccount(req.auth.user.id, (req.body || {}).password); return { ok: true }; }));
   app.get('/api/me', secure((req) => {
     const Char = require('../services/character.service');
     return { user: req.auth.user, characters: Char.list(req.auth.user.id) };

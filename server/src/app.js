@@ -7,6 +7,20 @@ const config = require('./config');
 module.exports = function createApp() {
   const app = express();
   app.disable('x-powered-by');
+  /* mobil uygulama (Capacitor) farklı origin'den çağırır: capacitor://localhost (iOS), https://localhost (Android) */
+  const APP_ORIGINS = /^(capacitor:[/][/]localhost|https?:[/][/]localhost(:[0-9]+)?|ionic:[/][/]localhost)$/;
+  app.use((req, res, next) => {
+    const o = req.headers.origin;
+    if (o && APP_ORIGINS.test(o)) {
+      res.setHeader('Access-Control-Allow-Origin', o);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Max-Age', '86400');
+      if (req.method === 'OPTIONS') return res.status(204).end();
+    }
+    next();
+  });
   app.use(express.json({ limit: '64kb' }));
   app.get('/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
   for (const mount of require('./routes')) mount(app);

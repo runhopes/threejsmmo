@@ -87,3 +87,22 @@
 }
 .at-char:hover .at-go { color: #E3BE79; }
 @media (max-width: 620px) { .at-char { width: 100%; } }
+#at-del { margin-left: 6px; color: #b9675c; border-color: #5a3a35; }
+
+/* phones in landscape (≈ 360–430 px tall): compact panel so the submit button stays on screen; 16 px inputs stop iOS focus-zoom */
+@media (max-height: 520px) {
+  #at-panel { max-height: 96vh; padding: 12px 24px 10px; width: min(600px, 80vw); }
+  #at-brand { margin-bottom: 6px; }
+  #at-brand h1 { font-size: 22px; }
+  #at-brand .at-sub, #at-foot { display: none; }
+  #at-tabs { margin-bottom: 6px; }
+  .at-tab { padding: 6px 18px; }
+  .at-fld { margin-top: 6px; }
+  .at-fld > span { margin-bottom: 2px; }
+  .at-fld input { padding: 7px 10px; }
+  #at-go { margin-top: 10px; padding: 9px; }
+  .at-note { margin-top: 6px; }
+  #at-error { margin: 4px 0 6px; padding: 6px 10px; }
+  .at-actions { margin-top: 10px; }
+}
+@media (pointer: coarse) { .at-fld input { font-size: 16px; } }

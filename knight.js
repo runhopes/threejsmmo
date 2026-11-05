@@ -2026,6 +2026,7 @@
       this.fxRing = new T.Mesh(new T.RingGeometry(0.85, 1.1, 28), new T.MeshBasicMaterial({ color: 0xffd878, transparent: true, opacity: 0, depthWrite: false, side: T.DoubleSide }));
       this.fxRing.rotation.x = -PI / 2; this.fxRing.position.set(0, 0.04, 0);
       root.add(this.fxRing);
+      if (window.VfxConform) window.VfxConform.attach(this.fxRing, { lift: 0.04 });   // [conform] skill ring lies on slopes (vfx/conform.js)
       this.trail = new Trail();
       this.slash = new SlashVFX();                             // designed slash effects (add knight.slash.group to the scene)
 

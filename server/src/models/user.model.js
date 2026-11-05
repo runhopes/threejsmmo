@@ -20,6 +20,15 @@ module.exports = {
     const row = db.prepare(SELECT_PUBLIC + ' WHERE id = ?').get(id);
     return row || null;
   },
+  /* hesap silme (App Store 5.1.1(v)): oturumlar + karakterler CASCADE ile gider; sohbet geçmişi anonimleşir */
+  remove(id) {
+    db.prepare('UPDATE chat_messages SET from_id = NULL WHERE from_id = ?').run(id);
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  },
+  passhash(id) {
+    const row = db.prepare('SELECT passhash FROM users WHERE id = ?').get(id);
+    return row ? row.passhash : null;
+  },
   exists(email, username) {
     const e = this.byEmail(email);
     const u = this.byUsername(username);

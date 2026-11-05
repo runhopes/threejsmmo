@@ -17,6 +17,7 @@
   const G_READ_GAP = 8, G_READ_W = 44, G_READ_FS = 12, SEAL_CX = 28, SEAL_R = 17, SEAL_FACE_IN = 1.5, SEAL_RING_R = 12.5, SEAL_FS = 15, SEAL_FS_LONG = 12;
   const KEY_H = 12, KEY_FS = 10, KEY_PAD = 3, KEY_IN = 3, KEY_CUT = 2, CD_FS = 15, BOTTOM = 6;
   const SKILL_COUNT = 9;
+  const MOBILE_HIDDEN = document.documentElement.classList.contains('is-mobile') || !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
   // ── RC · recipe alphas ──
   const WELL_FILL = 0.50, WELL_LIP_TOP = 0.72, WELL_LIP_BOT = 0.30, ICON_RECESS = 0.34, ICON_EDGE = 0.55, EMPTY_KEY_A = 0.50, KEY_FACE = 0.90, KEY_RIM = 0.22, KEY_SHADE = 0.50;
   const CD_VEIL = 0.66, CD_EDGE = 0.30, HOVER_LIP = 0.45, DROP_OK_A = 0.85, DROP_OK_WASH = 0.07, DROP_NO_A = 0.85, DROP_NO_WASH = 0.06, PRESS_DARK = 0.18, READY_A = 0.90, READY_WASH = 0.12;
@@ -408,6 +409,7 @@
         let lowOn = false;
         for (let i = 0; i < 3; i++) { const goal = V.low[i] ? 1 : 0; if (V.env[i] !== goal) { V.env[i] += Math.sign(goal - V.env[i]) * Math.min(Math.abs(goal - V.env[i]), dt / LOW_FADE); anim = true; } if (V.env[i] > 0 || V.low[i]) lowOn = true; }
         if (lowOn) { V.phase += dt; anim = true; } else V.phase = 0;
+        if (MOBILE_HIDDEN) return;                                 // [perf] phones: this bar is hidden (ui/mobilehud.js paints its own)
         if (anim || dirty) { dirty = false; draw(); }
       },
       resize(s) { surf.resize(s); dirty = true; },
@@ -415,6 +417,9 @@
     surf.resize(hud.s || 1);
     return api;
   }
+
+  // [mobile HUD] the same brushes for ui/mobilehud.js (touch layout, identical look): glass bar + SVG rasteriser + colours
+  global.HUDBottomPaint = { glassBar, svgImage, GB, poly, shapePts };
 
   const get = (hud) => hud._bottomBar || (hud._bottomBar = BottomBar(hud));
   global.HUDParts = global.HUDParts || {};

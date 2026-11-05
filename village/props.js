@@ -36,7 +36,7 @@
     return g;
   }
   P.defineInstanced = function (I, M) {
-    const CH = { tuft: 36, flowers: 36, cabbage: 48 };
+    const CH = window.__MOBILE ? { tuft: 72, flowers: 72, cabbage: 96 } : { tuft: 36, flowers: 36, cabbage: 48 };   // [perf] phones: bigger clutter chunks = fewer draws
     const add = (name, map, layer, cast) => {
       const parts = []; for (const [mat, geo] of map) parts.push({ geo, mat, cast: cast !== false });
       I.define(name, parts, { layer, chunk: CH[name] || 110 });

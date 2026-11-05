@@ -17,6 +17,7 @@
  */
 (function (global) {
   'use strict';
+  const MOBILE_MM = !!(global.matchMedia && global.matchMedia('(pointer: coarse)').matches); let mmAcc = 0;   // [perf] see frame()
   const P = global.HUDPaint, C = P.C, F = P.F;
 
   // ── minimap_sheet.gd geometry ──
@@ -277,7 +278,8 @@
         const ck = Math.round(p.x) + ', ' + Math.round(-p.z);
         if (ck !== coordKey) { coordKey = ck; dirty = true; }
       },
-      frame() { if (dirty && !root.hidden) { dirty = false; draw(); } },
+      // [perf] phones: markers move every frame, so the sketch map redraws at most 10x a second there (desktop: every frame)
+      frame(dt) { if (!dirty || root.hidden) return; if (MOBILE_MM) { mmAcc += dt || 0.016; if (mmAcc < 0.1) return; mmAcc = 0; } dirty = false; draw(); },
       redraw() { dirty = true; },
       resize(s) { surf.resize(s); dirty = true; },
       get state() { return S; },

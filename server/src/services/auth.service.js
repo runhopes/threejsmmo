@@ -52,6 +52,18 @@ module.exports = {
   logout(token) {
     Session.destroy(token);
   },
+  /* hesabı kalıcı sil: şifre doğrulaması şart; çevrimiçi karakterleri dünyadan düşürür */
+  deleteAccount(userId, password) {
+    const stored = User.passhash(userId);
+    if (!stored || !verify(String(password || ''), stored)) throw http(401, 'Şifre hatalı.');
+    const World = require('./world.service');
+    for (const p of [...World.players.values()]) {
+      if (p.userId !== userId) continue;
+      try {   /* gateway'in close işleyicisi oyuncuyu dünyadan çıkarır ve 'leave' yayınlar */
+        p.ws.send(JSON.stringify({ t: 'kicked', reason: 'Hesap silindi.' })); p.ws.close(4001, 'deleted'); } catch { }
+    }
+    User.remove(userId);
+  },
 };
 
 function http(status, message) {

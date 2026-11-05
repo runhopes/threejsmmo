@@ -1,0 +1,188 @@
+/* Mobile HUD (ui/mobilehud.js) — touch layout for phones / the native app. Active only under html.is-mobile.
+ * Landscape layout:
+ *   top-left    : player frame (emblem + level, name, HP, mana) + buffs
+ *   top-centre  : target frame (only with a target)
+ *   top-right   : compact minimap (existing part, scaled) + bag / menu buttons
+ *   bottom-left : joystick (mobile.js)
+ *   bottom-right: basic-attack button (mobile.js #m-fire) with the 8 skills on two arcs around it
+ *   bottom edge : thin EXP rail
+ * Tokens follow hud.css (bronze #A58C63, parchment text #DDD7C8, Alegreya SC titles). */
+
+html.is-mobile {
+  /* side insets: iOS reports ~59 pt on BOTH sides in landscape although the camera island is only on one edge's middle; the HUD
+     corners only need to clear the display's rounded corners, so most of that inset is given back to the layout */
+  --mh-il: max(0px, calc(env(safe-area-inset-left) - 38px));
+  --mh-ir: max(0px, calc(env(safe-area-inset-right) - 38px));
+  --mh-l: calc(var(--mh-il) + 12px);
+  --mh-r: calc(var(--mh-ir) + 12px);
+  --mh-t: max(6px, env(safe-area-inset-top));
+  --mh-b: max(4px, env(safe-area-inset-bottom));
+  --mh-glass: rgba(14, 17, 19, .72);
+  --mh-edge: rgba(165, 140, 99, .55);
+  --mh-edge-hi: #C9A86A;
+  --mh-text: #ECE5D4;
+  --mh-dim: #A49C8A;
+  --mh-hp: linear-gradient(180deg, #d0553f 0%, #9a2c1f 55%, #6e1a11 100%);
+  --mh-mp: linear-gradient(180deg, #5a8fc4 0%, #2f5d8f 60%, #1d3c5e 100%);
+  --mh-fire-size: 80px;
+  --mh-fire-right: calc(var(--mh-r) + 14px);
+  --mh-fire-bottom: calc(var(--mh-b) + 22px);
+}
+
+/* ---- the desktop HUD pieces that do not work on touch: canvas action bar (9 + F1-F9 slots, key caps), compass, menu strip,
+        canvas target card; the mobile layer replaces them ---- */
+html.is-mobile .hb-root,
+html.is-mobile .ath-cmp,
+html.is-mobile .hud-menustrip,
+html.is-mobile .hud-ath-quests,
+html.is-mobile #m-fs { display: none !important; }
+
+/* the web target card (ui/target.js) is a 618 px plate: on a phone the compact painted target bar (.mh-tg) replaces it */
+html.is-mobile .tc-root { display: none !important; }
+.mh-tg { position: absolute; left: 50%; top: calc(var(--mh-t) - 2px); width: 244px; height: 48px; transform: translateX(-50%); }
+.mh-tg .mh-cv { left: 0; top: 0; }
+html.mh-modal .mh-tg { display: none !important; }
+
+/* painted parts (ui/mobilehud.js draws them with the web HUD brushes): canvases carry a few px of shadow room */
+.mh-cv, .mh-kb { position: absolute; display: block; pointer-events: none; }
+
+/* ---- minimap: the Atherion part, scaled into the corner (it keeps its own tap → world map) ---- */
+html.is-mobile .ath-mm { transform-origin: 100% 0; transform: scale(var(--mh-mm-k, .58)); right: var(--mh-ir) !important; top: 0 !important; }
+
+/* ---- shared ---- */
+#mh-root { position: fixed; inset: 0; z-index: 55; pointer-events: none; font: 500 12px/1.2 'Alegreya Sans', system-ui, sans-serif; color: var(--mh-text);
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+#mh-root[hidden], #mh-root [hidden] { display: none !important; }
+#mh-root .mh-sk { display: block; }
+:where(#mh-root) :where(button) { all: unset; box-sizing: border-box; cursor: pointer; pointer-events: auto; touch-action: none; }   /* zero specificity: component rules win */
+.mh-panel { background: var(--mh-glass); border: 1px solid var(--mh-edge); box-shadow: 0 2px 10px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,236,200,.06); }
+.mh-bar { position: relative; overflow: hidden; background: rgba(5, 6, 7, .78); border: 1px solid rgba(0,0,0,.6); box-shadow: inset 0 0 0 1px rgba(236,227,208,.07); }
+.mh-bar > i { position: absolute; inset: 0; transform-origin: 0 50%; transition: transform .18s ease-out; }
+.mh-bar > b { position: relative; display: block; text-align: center; font: 700 10px/1 'Alegreya Sans', sans-serif; color: #fff; text-shadow: 0 1px 2px #000, 0 0 3px #000;
+  font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+
+/* ---- player block (top-left): seal + name + glass bars, one canvas ---- */
+.mh-me { position: absolute; left: calc(var(--mh-l) - 4px); top: calc(var(--mh-t) - 4px); width: 254px; height: 72px; pointer-events: auto; }
+.mh-me .mh-cv { left: 0; top: 0; }
+/* active effects: a centred row of round wells under the target bar (the web column under the minimap would sit under the skill arcs) */
+html.is-mobile .ath-fx { display: none !important; }
+.mh-buffs { position: absolute; left: 50%; top: calc(var(--mh-t) + 44px); width: 256px; height: 48px; transform: translateX(-50%); transition: top .15s; }
+.mh-buffs.up { top: var(--mh-t); }
+.mh-buffs .mh-cv { left: 0; top: 0; }
+html.mh-modal .mh-buffs { display: none !important; }
+
+/* chat (the web part, ui/chat.js): under the player block on the left; typing mode lifts it to the top so the keyboard never covers
+   the input. Rows / hint float over the world at rest exactly like the web. */
+html.is-mobile .hud-chat { left: max(var(--mh-l), calc(env(safe-area-inset-left) - 14px)) !important; bottom: auto !important; top: calc(var(--mh-t) + 74px) !important; transform: scale(.92); transform-origin: 0 0; z-index: 3; }
+html.is-mobile .hud-chat.open { top: var(--mh-t) !important; z-index: 90; }
+html.mh-modal .hud-chat:not(.open) { visibility: hidden; }
+
+/* ---- top-right: bag + menu buttons beside the minimap ---- */
+.mh-tr { position: absolute; top: var(--mh-t); right: calc(var(--mh-ir) + var(--mh-mm-w, 140px) + 8px); display: flex; flex-direction: column; gap: 6px; }
+.mh-ib { position: relative; width: 38px; height: 38px; display: grid !important; place-items: center; color: #E2C78F; }
+.mh-ib .mh-kb { left: -4px; top: -4px; }
+.mh-ib svg { position: relative; width: 20px; height: 20px; filter: drop-shadow(0 1px 0 rgba(0,0,0,.8)); }
+.mh-ib:active svg, .mh-ib.on svg { color: #F4E3BC; }
+
+/* menu sheet (☰): labelled buttons for every window */
+.mh-sheet { position: absolute; top: var(--mh-t); right: calc(var(--mh-ir) + var(--mh-mm-w, 140px) + 54px); padding: 6px; border-radius: 4px; display: grid; grid-template-columns: repeat(4, 72px); gap: 6px; pointer-events: auto; }
+.mh-sheet button { height: 58px; border-radius: 3px; border: 1px solid rgba(165,140,99,.35); background: rgba(30,34,36,.9); display: flex !important; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  font: 500 10px/1 'Alegreya SC', serif; letter-spacing: .08em; color: var(--mh-text); }
+.mh-sheet button svg { width: 20px; height: 20px; color: #E8D7AE; }
+.mh-sheet button:active { border-color: var(--mh-edge-hi); background: rgba(60,48,30,.9); }
+
+/* ---- action cluster (bottom-right): basic attack (#m-fire from mobile.js) + skills on two arcs ---- */
+html.is-mobile #m-fire { width: var(--mh-fire-size) !important; height: var(--mh-fire-size) !important; right: var(--mh-fire-right) !important; bottom: var(--mh-fire-bottom) !important;
+  transform: none !important; background: none !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; filter: none !important; }
+html.is-mobile #m-fire .mh-cv { left: -6px; top: -6px; }
+.mh-sk { position: absolute; width: var(--d); height: var(--d); margin: 0 calc(var(--d) / -2) calc(var(--d) / -2) 0;
+  right: var(--x); bottom: var(--y); pointer-events: auto; }
+.mh-sk .mh-cv { left: -6px; top: -6px; }
+
+/* long-press info bubble */
+.mh-tip { position: absolute; right: calc(var(--mh-fire-right) + 200px); bottom: calc(var(--mh-fire-bottom) + 150px); max-width: 240px; padding: 8px 10px; border-radius: 3px; }
+.mh-tip .tt { font: 500 14px/1.2 'Alegreya SC', serif; color: #F3DFAE; letter-spacing: .04em; }
+.mh-tip .tm { margin: 3px 0 5px; font-size: 11px; color: #9fc0e6; }
+.mh-tip .tb { font-size: 12px; line-height: 1.35; color: var(--mh-dim); }
+
+/* ---- EXP groove (bottom edge, between the joystick and the skill arcs) ---- */
+.mh-xp { position: absolute; left: 190px; bottom: calc(var(--mh-b) + 2px); height: 22px; }   /* left / width: ui/mobilehud.js layout() */
+.mh-xp .mh-cv { left: 0; top: 0; }
+
+/* ---- joystick: slightly smaller, inside the safe area ---- */
+/* web HUD language: the base is a sunken well with a bronze rim, the knob is the level seal's raised face */
+html.is-mobile #m-joy { width: 124px !important; height: 124px !important; transform: none !important; left: calc(var(--mh-l) + 12px) !important; bottom: calc(var(--mh-b) + 16px) !important;
+  background: radial-gradient(circle at 50% 45%, rgba(8,7,5,.06), rgba(8,7,5,.22) 75%) !important; border: 2px solid rgba(196,182,154,.55) !important;
+  box-shadow: inset 0 2px 5px rgba(0,0,0,.25), 0 0 0 1px rgba(0,0,0,.35) !important; }
+html.is-mobile #m-joy i { width: 54px !important; height: 54px !important; margin: -27px 0 0 -27px !important;
+  background: radial-gradient(circle at 42% 36%, #4a4134 0%, #2a241c 55%, #17130e 100%) !important; border: 2px solid #C4B69A !important;
+  box-shadow: 0 3px 8px rgba(0,0,0,.65), inset 0 1px 0 rgba(244,227,188,.25), inset 0 0 0 3px rgba(0,0,0,.35) !important; }
+
+/* ---- windows on a phone: fit the short landscape screen ---- */
+html.is-mobile .inv-win, html.is-mobile .cw-root, html.is-mobile .sw-win, html.is-mobile .mw-win { z-index: 70; }
+
+/* very short phones (iPhone SE / mini landscape) */
+@media (max-height: 360px) {
+  html.is-mobile { --mh-fire-size: 70px; }
+}
+
+/* ======================= modal state: a window / sheet is open ======================= */
+/* the touch controls step aside; one large close button sits top-right */
+html.mh-modal #m-joy, html.mh-modal #m-fire, html.mh-modal .mh-tr, html.mh-modal .mh-sheet, html.mh-modal .mh-me, html.mh-modal .mh-buffs,
+html.mh-modal .mh-xp, html.mh-modal .mh-tip { display: none !important; }
+.mh-x { all: unset; box-sizing: border-box; cursor: pointer; touch-action: none; -webkit-tap-highlight-color: transparent;
+  position: fixed; top: var(--mh-t); right: var(--mh-r); width: 42px; height: 42px; display: none !important; place-items: center; z-index: 95; color: #E2C78F; }
+.mh-x .mh-kb { left: -4px; top: -4px; }
+.mh-x svg { position: relative; width: 20px; height: 20px; filter: drop-shadow(0 1px 0 rgba(0,0,0,.8)); }
+html.mh-modal .mh-x { display: grid !important; }
+/* skill buttons only turn invisible: their inline SVGs hold gradient defs other copies of the icons (skills sheet) reference */
+html.mh-modal .mh-sk { visibility: hidden; pointer-events: none; }
+/* the HUD windows live in #hud-root (z 5), under this layer: while one is open the layer shows only its close button */
+.mh-dim { position: fixed; inset: 0; background: rgba(6, 8, 10, .55); display: none; pointer-events: auto; }
+html.mh-modal.mh-dimmed .mh-dim { display: block; }
+
+/* ======================= touch sheets (skills / inventory) ======================= */
+.mh-page { position: absolute; z-index: 2; inset: var(--mh-t) calc(var(--mh-r) + 52px) var(--mh-b) var(--mh-l); display: flex; flex-direction: column; pointer-events: auto;
+  background: linear-gradient(180deg, rgba(24, 22, 19, .97), rgba(14, 13, 12, .97)); border: 1px solid var(--mh-edge); border-radius: 4px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,236,200,.06); overflow: hidden; animation: mh-in .18s ease-out; }
+@keyframes mh-in { from { opacity: 0; transform: translateY(8px); } }
+.mh-page header { display: flex; align-items: center; gap: 14px; padding: 10px 16px 8px; border-bottom: 1px solid rgba(165,140,99,.22); flex: none; }
+.mh-page h2 { margin: 0; font: 600 16px/1 'Cinzel', 'Alegreya SC', serif; letter-spacing: .18em; color: #ECE5D4; }
+.mh-page header small { font: 500 11px/1 'Alegreya Sans', sans-serif; color: var(--mh-dim); letter-spacing: .04em; }
+.mh-page .tabs { margin-left: auto; display: flex; gap: 6px; }
+.mh-page .tabs button { padding: 7px 14px; border: 1px solid rgba(165,140,99,.35); font: 500 11px/1 'Alegreya SC', serif; letter-spacing: .12em; color: var(--mh-dim); border-radius: 2px; }
+.mh-page .tabs button.on { color: #E3BE79; border-color: #A58C63; box-shadow: inset 0 -2px 0 #A58C63; }
+.mh-page .body { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; padding: 12px 16px 14px; }
+.mh-cap { font: 500 10px/1 'Alegreya SC', serif; letter-spacing: .2em; color: #8a7a56; margin: 0 0 8px; }
+
+/* skills */
+.mh-skg { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.mh-skc { display: grid; grid-template-columns: 48px 1fr; gap: 4px 10px; padding: 8px 10px; background: rgba(255,240,210,.03); border: 1px solid rgba(165,140,99,.2); border-radius: 3px; }
+.mh-skc .ic { grid-row: span 3; width: 48px; height: 48px; border: 1.5px solid #A58C63; border-radius: 3px; overflow: hidden; background: #111; }
+.mh-skc .ic svg { width: 100%; height: 100%; display: block; }
+.mh-skc b { font: 500 14px/1.1 'Alegreya SC', serif; letter-spacing: .03em; color: #F3DFAE; }
+.mh-skc .meta { display: flex; gap: 8px; font: 600 10px/1 'Alegreya Sans', sans-serif; color: var(--mh-dim); }
+.mh-skc .meta .mp { color: #9fc0e6; } .mh-skc .meta .key { color: #8a7a56; letter-spacing: .1em; }
+.mh-skc p { margin: 0; font: 400 12px/1.35 'Alegreya Sans', sans-serif; color: #BDB4A2; }
+.mh-skc.basic { border-color: rgba(201,168,106,.5); background: rgba(201,168,106,.06); }
+
+/* inventory */
+.mh-inv { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: start; }
+.mh-eq { display: grid; grid-template-columns: repeat(3, 58px); grid-auto-rows: 58px; gap: 8px; }
+.mh-well { position: relative; border-radius: 3px; background: linear-gradient(180deg, rgba(0,0,0,.45), rgba(0,0,0,.25)); border: 1px solid rgba(236,227,208,.10);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.6); display: grid; place-items: center; color: rgba(221,215,200,.22); }
+.mh-well svg { width: 26px; height: 26px; }
+.mh-well span { position: absolute; left: 0; right: 0; bottom: 3px; text-align: center; font: 500 8px/1 'Alegreya SC', serif; letter-spacing: .1em; color: rgba(221,215,200,.38); }
+.mh-eq[data-eq] { grid-template-areas: "earring helmet bracelet" "weapon armor shield" "weapon pants boots"; }
+.mh-eq .helmet { grid-area: helmet; } .mh-eq .earring { grid-area: earring; } .mh-eq .bracelet { grid-area: bracelet; } .mh-eq .weapon { grid-area: weapon; }
+.mh-eq .armor { grid-area: armor; } .mh-eq .shield { grid-area: shield; } .mh-eq .pants { grid-area: pants; } .mh-eq .boots { grid-area: boots; }
+.mh-bag { display: grid; grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 6px; }
+.mh-bag .mh-well { aspect-ratio: 1; }
+.mh-note { margin-top: 10px; font: 400 11px/1.3 'Alegreya Sans', sans-serif; color: #6b6f69; }
+@media (max-height: 360px) { .mh-eq { grid-template-columns: repeat(3, 48px); grid-auto-rows: 48px; } }
+
+/* dead: the death screen (ui/death.js, two revive choices) takes the touches */
+html.mh-dead #m-joy, html.mh-dead #m-fire, html.mh-dead .mh-sk, html.mh-dead .mh-tr, html.mh-dead .mh-sheet, html.mh-dead .mh-tip,
+html.mh-dead .mh-xp, html.mh-dead .mh-buffs, html.mh-dead .mh-tg, html.mh-dead .hud-chat { visibility: hidden !important; pointer-events: none !important; }
+/* typing: the chat plate rises to the top-left corner; the player block steps aside until the line is sent */
+html.is-mobile:has(.hud-chat.open) .mh-me, html.is-mobile:has(.hud-chat.open) .mh-buffs { visibility: hidden; }

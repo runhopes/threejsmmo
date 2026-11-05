@@ -54,7 +54,9 @@
     const plane = (size, map, additive, order) => {
       const m = new T.Mesh(new T.PlaneGeometry(size, size), new T.MeshBasicMaterial({ map, transparent: true, depthWrite: false, opacity: 0,
         blending: additive ? T.AdditiveBlending : T.NormalBlending, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
-      m.rotation.x = -Math.PI / 2; m.renderOrder = order; group.add(m); return m;
+      m.rotation.x = -Math.PI / 2; m.renderOrder = order; group.add(m);
+      if (global.VfxConform) global.VfxConform.attach(m, { lift: 0.035, seg: 6 });   // [conform] lies on slopes (vfx/conform.js)
+      return m;
     };
     const glow = plane(1.5, glowTex(T), true, 3), ring = plane(1.1, ringTex(T), false, 4), chev = plane(1.25, chevTex(T), false, 5), dot = plane(0.16, glowTex(T), true, 6);
     scene.add(group);

@@ -99,7 +99,8 @@
         polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
       const mesh = new T.Mesh(this.flat, mat);
       mesh.renderOrder = kind === 'glow' ? 6 : 5; mesh.frustumCulled = false;
-      return { mesh, u, kind };
+      if (global.VfxConform) global.VfxConform.attach(mesh, { seg: 16 });   // [conform] own subdivided flat that lies on slopes (vfx/conform.js)
+      return { mesh, u, kind, cflat: mesh.geometry };
     }
     /* add(kind, { x, z, r, y?, vertical?, life?, update(d, dt) -> false to end, ...uniform presets }) */
     add(kind, o) {
@@ -114,7 +115,7 @@
       u.uInner.value = o.inner || 0.94; u.uEdgeW.value = o.edgeW || 0.035; u.uFillA.value = o.fillA || 0; u.uPow.value = o.pow || 2;
       u.uReveal.value = o.reveal === undefined ? 1.1 : o.reveal; u.uTexA.value = o.texA === undefined ? 1 : o.texA;
       if (o.map) u.uMap.value = o.map;
-      D.mesh.geometry = o.vertical ? this.vert : this.flat;
+      D.mesh.geometry = o.vertical ? this.vert : (D.cflat || this.flat);   // [conform] (cflat = this.flat without the open world)
       D.mesh.quaternion.identity();
       const y = o.y === undefined ? 0.022 + (this.seq++ % 10) * 0.0025 : o.y;
       D.mesh.position.set(o.x, y, o.z); D.mesh.scale.setScalar((o.r || 1) * 2);

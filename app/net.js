@@ -21,6 +21,7 @@
   let sendAcc = 0, lastPos = { x: 0, z: 0, t: 0 };
 
   function wsUrl() {
+    if (global.AtherionConfig && global.AtherionConfig.WS_URL) return global.AtherionConfig.WS_URL;   // app/config.js (native → canlı sunucu)
     const proto = global.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return proto + '//' + global.location.host + '/ws';
   }

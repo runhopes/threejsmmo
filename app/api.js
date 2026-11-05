@@ -7,9 +7,11 @@
   const TOKEN_KEY = 'tdsm_token';
   const OFFLINE = /[?&]offline=1/.test(global.location.search);
 
+  const BASE = (global.AtherionConfig && global.AtherionConfig.API_BASE) || '';   // app/config.js: native → canlı sunucu
+
   async function call(method, url, body) {
     if (OFFLINE) throw new Error('offline');
-    const res = await fetch(url, {
+    const res = await fetch(BASE + url, {
       method, headers: {
         'Content-Type': 'application/json',
         ...(global.localStorage.getItem(TOKEN_KEY) ? { Authorization: 'Bearer ' + global.localStorage.getItem(TOKEN_KEY) } : {}),
@@ -32,5 +34,6 @@
     me: () => call('GET', '/api/me'),
     characters: () => call('GET', '/api/characters'),
     createChar: (d) => call('POST', '/api/characters', d),
+    deleteAccount: (password) => call('POST', '/api/me/delete', { password }),   // kalıcı hesap silme (App Store 5.1.1(v))
   };
 })(window);

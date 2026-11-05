@@ -6,6 +6,7 @@ own aiming, hit tests and damage.
 | File | Role |
 |---|---|
 | `vfx/core.js` | **VFXKit**: generic building blocks with fixed-size pools. Instanced particles (4 batches), batched ribbon trails, procedural flats (rings, decals, telegraph, reticle), beams and a scheduler. Not archer-specific; the mage can reuse it. |
+| `vfx/conform.js` | **VfxConform** (shared by every class, magefx, markers, creature telegraphs): flat ground decals follow the open-world slopes. `attach(mesh, { lift? })` swaps in a subdivided twin of the Plane / Ring / Circle geometry (same UVs); `VfxConform.update()` (index.html, right before `renderer.render`) puts each vertex `lift` above the rendered terrain triangles (`lift` omitted = the decal's own y, the "authored at y = 0" convention). Lying particles (`gadd` / `gnorm`) are lifted + tilted on the slope in `vfx/core.js`. No-op without the open world; `?conform=0` = old flat decals (A/B). |
 | `vfx/archer.js` | **ArcherVFX**: styles, pooled arrows, bow tracker, release / travel / impact builders, rain, poison status, eagle focus and hop. |
 | `archer-vfx.html` | Test bench: the real archer with the real gameplay camera and every skill on keys 1–9. It has live tuning sliders. |
 | `tools/archervfx.mjs` | Deterministic phase captures (contact sheet per skill + logged timeline). |

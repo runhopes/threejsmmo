@@ -212,7 +212,7 @@
         const v2 = pr(qx + it.rx, qy, qz + it.rz);                     // 1 m along camera right = billboard px per metre at this depth
         if (!v2) continue;
         const pxm = Math.hypot((v2.x - nx) * 0.5 * vw, (v2.y - ny) * 0.5 * vh);
-        const sc = scaleCurve(it, t), k = DN.PIXEL * UNIT_M * pxm;     // CSS px per font px before the scale curve
+        const sc = scaleCurve(it, t), k = DN.PIXEL * UNIT_M * pxm * (global.__dmgNumScale || 1);     // CSS px per font px before the scale curve ([mobile HUD] __dmgNumScale: the far phone camera)
         if (sx < -400 || sx > vw + 400 || sy < -400 || sy > vh + 400) continue;
         let col = it.K.c255;
         if (it.flash) {

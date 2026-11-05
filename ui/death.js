@@ -9,8 +9,8 @@
  *   motion   — the shader / tezgâh timeline from the moment of death; on revive the cluster fades in .25 s and colour returns in .60 s.
  * What this game has (real data only): the HUD only knows state.player.dead and the game's single revive is the R key. So: no killer (Atherion's
  * own text for an unknown killer: "Yere düştün."), no death toll row, no Can Fitili row, no town choice, no countdown — the fuse is drawn in its
- * unlocked (burnt-through) state and the one choice says "BURADA DİRİL" with "Dirilmek için [R]" under it. If the game ever passes
- * hud.opts.onRevive, the choice becomes clickable (hover cushion, one-shot, 3 s timeout) exactly like Atherion's.
+ * unlocked (burnt-through) state. TWO choices (2026-11-05): "ŞEHİRDE DİRİL" [T] (full health, town) and "BURADA DİRİL" [R] (half health, on
+ * the spot); with hud.opts.onRevive(mode) they are clickable / tappable (hover cushion, one-shot, 3 s timeout) exactly like Atherion's.
  * API: window.HUDDeath(hud) → { set(dead), frame(dt), resize(s) }. Design space: height 1080 × hud.s, x from the screen centre, centred vertically.
  */
 (function (global) {
@@ -27,7 +27,7 @@
     RULE_Y: 516, RULE_HALF: 300, RULE_GAP: 26, DIAMOND: 17,
     CHOICE_Y: 636, CHOICE_SUB_Y: 661, CHOICE_PX: 16, CHOICE_TRACK: 0.18, SUB_PX: 16,
     GROOVE_Y: 679, GROOVE_W: 150, GROOVE_W_HOVER: 196, CUSHION_RX: 170, CUSHION_RY: 46,
-    HIT_HALF_W: 150, HIT_Y0: 598, HIT_Y1: 692,
+    HIT_HALF_W: 150, HIT_Y0: 598, HIT_Y1: 692, CHOICE_DX: 190,
     ITALIC_SKEW: 0.18,
     KEY_W: 32, KEY_H: 20, KEY_CUT: 4, KEY_TEXT_PAD: 10, KEY_PX: 12, KEY_GAP: 8,   // veil_key_cap.gd
     COUNTDOWN: 0,                                                 // this game revives at once (R): the lock is open from the first frame
@@ -63,6 +63,9 @@
     const g = cv.getContext('2d');
 
     let open = false, closing = false, t = 0, closeT = 0, chosen = false, tc = 0, hoverOn = false, hoverK = 0;
+    // [two choices] 0 = ŞEHİRDE DİRİL (town, key T), 1 = BURADA DİRİL (here, key R); hoverOn/hoverK above are unused leftovers
+    let hoverIdx = -1, chosenIdx = -1; const hk = [0, 0];
+    const TOUCH = !!(global.matchMedia && global.matchMedia('(pointer: coarse)').matches);
     let s = hud.s || 1, W = 0, H = 0, dpr = 1, dirty = true, filterKey = '';
     P.onFonts(() => { dirty = true; });
     const clickable = () => typeof hud.opts.onRevive === 'function';
@@ -190,32 +193,41 @@
       P.setFont(g, f); g.fillStyle = A(COL.BONE, a); g.fillText(text, x + (w - g.measureText(text).width) * 0.5, y + (h + m.a - m.d) * 0.5);
       return w;
     }
+    // two choices side by side (Metin2-style "Şehirde / Burada yeniden başla"); each: tracked caps + oblique sub line + key cap + groove
+    const CHOICES = [
+      { label: 'ŞEHİRDE DİRİL', sub: 'Tam canla · kasabada', key: 'T', cx: -G.CHOICE_DX },
+      { label: 'BURADA DİRİL', sub: 'Yarı canla · olduğun yerde', key: 'R', cx: G.CHOICE_DX },
+    ];
     function drawChoice(ca) {
       const a = eo(ramp(t, TL.CHOICE)) * ca;
       if (a <= 0) return;
-      const rk = eo(ramp(t, [G.COUNTDOWN, G.COUNTDOWN + TL.GROOVE_IN])), h = t >= G.COUNTDOWN ? hoverK : 0;
-      const lit = chosen ? 1 - ramp(tc, [0, TL.CHOICE_HOLD + TL.EXIT_CLUSTER]) : 0;
-      radial(0, G.CHOICE_Y - 6, G.CUSHION_RX, G.CUSHION_RY, COL.CUSHION, 0.085 * h * a);   // cursor light cushion
-      let lc = mix(COL.LOCK, COL.INK_HI, rk);
-      if (h > 0) lc = mix(COL.INK_HI, COL.HOVER_HI, h);
-      if (lit > 0) lc = mix(COL.HOVER_HI, COL.AMBER, lit);
-      const lf = P.F.cinzel(600, G.CHOICE_PX), sp = G.CHOICE_TRACK * G.CHOICE_PX, label = 'BURADA DİRİL';
-      g.save(); const lw = tracked(label, lf, sp); g.fillStyle = A(lc, a); g.fillText(label, -lw * 0.5, G.CHOICE_Y); g.restore();
-      // sub line: "Dirilmek için" (oblique, sub colour) + the R key cap — the game's only way back
-      const sf = P.F.serif(400, G.SUB_PX), sub = 'Dirilmek için', sw = P.width(g, sub, sf);
-      const kw = Math.max(G.KEY_W, P.width(g, 'R', P.F.cinzel(600, G.KEY_PX)) + G.KEY_TEXT_PAD), total = sw + G.KEY_GAP + kw, x0 = -total * 0.5;
-      const sa = a * (0.8 + 0.2 * rk);
-      oblique(sub, sf, x0, G.CHOICE_SUB_Y, A(mix(COL.LOCK, COL.SUB, rk), sa));
-      keyCap(x0 + sw + G.KEY_GAP, G.CHOICE_SUB_Y - 5, 'R', sa);
-      // groove: dead ash while locked, the amber identity once open (primary choice: glow passes)
-      const gw = G.GROOVE_W + (G.GROOVE_W_HOVER - G.GROOVE_W) * Math.max(h, lit);
-      hair(0, G.GROOVE_Y, gw, 2, COL.ASH, 0.30 * (1 - rk) * a);
-      if (rk > 0) {
-        const ga = Math.min(1, rk * a * (0.85 + 0.15 * h) + lit);
-        hair(0, G.GROOVE_Y, gw, 12, COL.AMBER, ga * 0.07);
-        hair(0, G.GROOVE_Y, gw, 6, COL.AMBER, ga * 0.18);
-        hair(0, G.GROOVE_Y, gw, 2, COL.AMBER, ga);
-      }
+      const rk = eo(ramp(t, [G.COUNTDOWN, G.COUNTDOWN + TL.GROOVE_IN]));
+      CHOICES.forEach((c, i) => {
+        const h = t >= G.COUNTDOWN ? hk[i] : 0;
+        const lit = chosen && chosenIdx === i ? 1 - ramp(tc, [0, TL.CHOICE_HOLD + TL.EXIT_CLUSTER]) : 0;
+        g.save(); g.translate(c.cx, 0);
+        radial(0, G.CHOICE_Y - 6, G.CUSHION_RX, G.CUSHION_RY, COL.CUSHION, 0.085 * h * a);   // cursor light cushion
+        let lc = mix(COL.LOCK, COL.INK_HI, rk);
+        if (h > 0) lc = mix(COL.INK_HI, COL.HOVER_HI, h);
+        if (lit > 0) lc = mix(COL.HOVER_HI, COL.AMBER, lit);
+        const lf = P.F.cinzel(600, G.CHOICE_PX), sp = G.CHOICE_TRACK * G.CHOICE_PX;
+        g.save(); const lw = tracked(c.label, lf, sp); g.fillStyle = A(lc, a); g.fillText(c.label, -lw * 0.5, G.CHOICE_Y); g.restore();
+        // sub line (oblique) + the key cap (keyboards only; on touch the whole choice is the button)
+        const sf = P.F.serif(400, G.SUB_PX), sw = P.width(g, c.sub, sf), sa = a * (0.8 + 0.2 * rk);
+        const kw = TOUCH ? 0 : Math.max(G.KEY_W, P.width(g, c.key, P.F.cinzel(600, G.KEY_PX)) + G.KEY_TEXT_PAD), total = sw + (TOUCH ? 0 : G.KEY_GAP + kw), x0 = -total * 0.5;
+        oblique(c.sub, sf, x0, G.CHOICE_SUB_Y, A(mix(COL.LOCK, COL.SUB, rk), sa));
+        if (!TOUCH) keyCap(x0 + sw + G.KEY_GAP, G.CHOICE_SUB_Y - 5, c.key, sa);
+        // groove: dead ash while locked, the amber identity once open
+        const gw = G.GROOVE_W + (G.GROOVE_W_HOVER - G.GROOVE_W) * Math.max(h, lit);
+        hair(0, G.GROOVE_Y, gw, 2, COL.ASH, 0.30 * (1 - rk) * a);
+        if (rk > 0) {
+          const ga = Math.min(1, rk * a * (i === 1 ? 0.85 : 0.7) * (0.85 + 0.15 * h) + lit);
+          hair(0, G.GROOVE_Y, gw, 12, COL.AMBER, ga * 0.07);
+          hair(0, G.GROOVE_Y, gw, 6, COL.AMBER, ga * 0.18);
+          hair(0, G.GROOVE_Y, gw, 2, COL.AMBER, ga);
+        }
+        g.restore();
+      });
     }
     function draw() {
       dirty = false;
@@ -230,21 +242,33 @@
       drawTitle(ca); drawCause(ca); drawRule(ca); drawChoice(ca);
     }
 
-    /* ── input (only when the game provides hud.opts.onRevive) ── */
+    /* ── input (only when the game provides hud.opts.onRevive(mode), mode = 'town' | 'here') ── */
     function zoneAt(e) {
-      if (!open || chosen || !clickable() || t < G.COUNTDOWN || ramp(t, TL.CHOICE) < 0.5) return false;
+      if (!open || chosen || !clickable() || t < G.COUNTDOWN || ramp(t, TL.CHOICE) < 0.5) return -1;
       const x = (e.clientX - W * 0.5) / s, y = (e.clientY - oy()) / s;
-      return x >= -G.HIT_HALF_W && x <= G.HIT_HALF_W && y >= G.HIT_Y0 && y <= G.HIT_Y1;
+      if (y < G.HIT_Y0 || y > G.HIT_Y1) return -1;
+      for (let i = 0; i < CHOICES.length; i++) if (Math.abs(x - CHOICES[i].cx) <= G.HIT_HALF_W) return i;
+      return -1;
+    }
+    function choose(i) {
+      if (chosen || i < 0) return;
+      chosen = true; chosenIdx = i; tc = 0; hoverIdx = -1; root.style.cursor = ''; dirty = true;   // one shot: the request is on its way
+      hud.opts.onRevive(i === 0 ? 'town' : 'here');
     }
     root.addEventListener('mousedown', (e) => e.preventDefault());
-    root.addEventListener('pointermove', (e) => { const on = zoneAt(e); if (on !== hoverOn) { hoverOn = on; root.style.cursor = on ? 'pointer' : ''; } });
-    root.addEventListener('pointerleave', () => { hoverOn = false; root.style.cursor = ''; });
+    root.addEventListener('pointermove', (e) => { const on = zoneAt(e); if (on !== hoverIdx) { hoverIdx = on; root.style.cursor = on >= 0 ? 'pointer' : ''; } });
+    root.addEventListener('pointerleave', () => { hoverIdx = -1; root.style.cursor = ''; });
     root.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
-      if (e.button !== 0 || !zoneAt(e)) return;
-      chosen = true; tc = 0; hoverOn = false; root.style.cursor = ''; dirty = true;   // one shot: the request is on its way
-      hud.opts.onRevive();
+      if (e.button !== 0) return;
+      choose(zoneAt(e));
     });
+    // keyboard: T = town, R = here (capture: before the game's own R handler)
+    addEventListener('keydown', (e) => {
+      if (!open || chosen || !clickable() || e.repeat) return;
+      const k = (e.key || '').toLowerCase();
+      if (k === 't' || k === 'r') { e.stopImmediatePropagation(); e.preventDefault(); choose(k === 't' ? 0 : 1); }
+    }, true);
     root.addEventListener('wheel', (e) => { e.stopPropagation(); }, { passive: true });
 
     cv.width = cv.height = 1;
@@ -252,10 +276,10 @@
       set(dead) {
         dead = !!dead;
         if (dead && !open) {
-          open = true; closing = false; t = 0; closeT = 0; chosen = false; tc = 0; hoverOn = false; hoverK = 0;
+          open = true; closing = false; t = 0; closeT = 0; chosen = false; tc = 0; hoverOn = false; hoverK = 0; hoverIdx = -1; chosenIdx = -1; hk[0] = hk[1] = 0;
           root.hidden = false; root.style.pointerEvents = 'auto'; size();
         } else if (!dead && open) {                               // hide_death: input released at once, the exit plays without taking clicks
-          open = false; closing = true; closeT = 0; hoverOn = false;
+          open = false; closing = true; closeT = 0; hoverOn = false; hoverIdx = -1;
           root.style.pointerEvents = 'none'; root.style.cursor = ''; dirty = true;
         }
       },
@@ -274,8 +298,7 @@
             return;
           }
         }
-        const target = hoverOn ? 1 : 0;
-        if (Math.abs(hoverK - target) > 0.002) { hoverK += (target - hoverK) * Math.min(1, dt * TL.HOVER_RATE); anim = true; } else if (hoverK !== target) { hoverK = target; anim = true; }
+        for (let i = 0; i < 2; i++) { const target = hoverIdx === i ? 1 : 0; if (Math.abs(hk[i] - target) > 0.002) { hk[i] += (target - hk[i]) * Math.min(1, dt * TL.HOVER_RATE); anim = true; } else if (hk[i] !== target) { hk[i] = target; anim = true; } }
         if (anim || dirty) draw();
       },
       resize(ns) { s = ns || hud.s || 1; if (!root.hidden) size(); },

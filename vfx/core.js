@@ -83,7 +83,7 @@
     '  if (iB.w > 0.0) { vec2 v = iB.xz * iB.w; float vl = length(v); if (vl > 1e-4) { ax = v / vl; len = size + vl; c.xz -= v * 0.5; } }',
     '  vec2 pp = vec2(-ax.y, ax.x);',
     '  vec2 o = ax * position.x * len + pp * position.y * size;',
-    '  gl_Position = projectionMatrix * viewMatrix * vec4(c.x + o.x, c.y, c.z + o.y, 1.0);',
+    '  gl_Position = projectionMatrix * viewMatrix * vec4(c.x + o.x, c.y + o.x * iB.y + o.y * iD.w, c.z + o.y, 1.0);',   // [conform] tilted on the slope
     '  vUv = (uv + vec2(mod(iD.y, 2.0), 1.0 - floor(iD.y * 0.5))) * 0.5;',   // canvas rows are flipped (flipY): shape row 0 = top
     '  vC = iC; vHot = iD.z;',
     '}'].join('\n');
@@ -97,6 +97,7 @@
     '}'].join('\n');
 
   const F32 = (n) => new Float32Array(n);
+  const CF = global.VfxConform || null;                       // [conform] vfx/conform.js (absent: unchanged flat behaviour)
   class ParticleBatch {
     constructor(scene, map, cap, additive, flat, order) {
       this.cap = cap; this.n = 0; this.dropped = 0;
@@ -116,7 +117,7 @@
         polygonOffset: flat, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
       });
       this.mesh = new T.Mesh(g, mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = order;
-      this.geo = g; scene.add(this.mesh);
+      this.geo = g; scene.add(this.mesh); this.flat = !!flat;
     }
     spawn() {                                                  // returns a slot index to fill, or -1 when full
       if (this.n >= this.cap) { this.dropped++; return -1; }
@@ -151,6 +152,15 @@
         const i4 = i * 4;
         A[i4] = P[i3]; A[i4 + 1] = P[i3 + 1]; A[i4 + 2] = P[i3 + 2]; A[i4 + 3] = this.s0[i] + (this.s1[i] - this.s0[i]) * e;
         B[i4] = V[i3]; B[i4 + 1] = V[i3 + 1]; B[i4 + 2] = V[i3 + 2]; B[i4 + 3] = this.str[i];
+        if (this.flat) {                                         // [conform] lying particles: y is the height above the terrain, the quad follows its slope
+          let gx = 0, gz = 0;
+          if (CF && CF.active) {
+            const x = P[i3], z = P[i3 + 2], r = Math.max(0.3, A[i4 + 3] * 0.5), h0 = CF.groundY(x, z);
+            gx = (CF.groundY(x + r, z) - CF.groundY(x - r, z)) / (2 * r); gz = (CF.groundY(x, z + r) - CF.groundY(x, z - r)) / (2 * r);
+            A[i4 + 1] += h0 + Math.min(0.15, (Math.abs(gx) + Math.abs(gz)) * r * 0.2);
+          }
+          B[i4 + 1] = gx; D[i4 + 3] = gz;
+        }
         Cc[i4] = C0[i3] + (C1[i3] - C0[i3]) * cu; Cc[i4 + 1] = C0[i3 + 1] + (C1[i3 + 1] - C0[i3 + 1]) * cu; Cc[i4 + 2] = C0[i3 + 2] + (C1[i3 + 2] - C0[i3 + 2]) * cu; Cc[i4 + 3] = a;
         D[i4] = this.rot[i]; D[i4 + 1] = this.shape[i]; D[i4 + 2] = this.hot[i];
         this.age[i] += dt;
@@ -448,6 +458,7 @@
     const flatPool = [], flats = [];
     for (let i = 0; i < (cap.flats || 48); i++) {                // stress test (5 archers + rain) peaks at ~27 live
       const m = new T.Mesh(flatGeo, flatMat.clone()); m.visible = false; m.frustumCulled = false; root.add(m);
+      if (global.VfxConform) global.VfxConform.attach(m, { seg: 16 });   // [conform] ground flats lie on slopes (vfx/conform.js)
       flatPool.push(m);
     }
     /* kit.flat(mode, { pos, radius, ground: true (default) | quaternion, color, color2, alpha, add, order, update(F, dt) })
@@ -463,6 +474,7 @@
       m.scale.setScalar((o.radius || 1) * 2);
       if (o.quaternion) { m.position.copy(o.pos); m.quaternion.copy(o.quaternion); }
       else { m.position.set(o.pos.x, o.y === undefined ? 0.03 : o.y, o.pos.z); m.rotation.set(-Math.PI / 2, 0, 0); }   // ground: walkable ground is y = 0
+      if (global.VfxConform) global.VfxConform.enable(m, !o.quaternion);   // [conform] y = height above the terrain; oriented rings stay flat
       m.visible = true;
       const F = { m, u: U, t: 0, radius: o.radius || 1, alive: true, update: o.update || null, data: o.data || {},
         free() { if (!F.alive) return; F.alive = false; m.visible = false; flatPool.push(m); } };
@@ -479,6 +491,7 @@
     const beamPool = [], beams = [];
     for (let i = 0; i < (cap.beams || 32); i++) {
       const m = new T.Mesh(beamGeo, beamMat.clone()); m.visible = false; m.frustumCulled = false; m.renderOrder = 28; root.add(m);
+      if (global.VfxConform) global.VfxConform.attach(m, { seg: 16, segY: 1 });   // [conform] ground-flat beams (aim guides) lie on slopes
       beamPool.push(m);
     }
     /* kit.beam({ p0, p1 (Vector3, copied unless follow), width, color, alpha, core, life, fade: [tail, head], sweep: speed,
@@ -491,6 +504,7 @@
       m.material.blending = o.norm ? T.NormalBlending : T.AdditiveBlending;
       m.renderOrder = o.order === undefined ? 28 : o.order;
       m.visible = true;
+      if (global.VfxConform) global.VfxConform.enable(m, !!o.flat);   // [conform] only the ground-flat ones
       const B = { m, u: U, t: 0, life: (o.life || 0.1) * kit.lifeMul, p0: o.p0.clone(), p1: o.p1.clone(), width: o.width || 0.05, alpha: o.alpha === undefined ? 1 : o.alpha,
         flat: !!o.flat, grow: o.grow || 0, sweep: o.sweep || 0, update: o.update || null, alive: true, hold: !!o.hold, wcurve: o.wcurve === undefined ? 0.5 : o.wcurve,
         free() { if (!B.alive) return; B.alive = false; m.visible = false; beamPool.push(m); } };

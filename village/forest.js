@@ -422,7 +422,10 @@
   ];
   const lodOf = (o, seed) => Object.assign({}, o, { seed, lod: true, fill: Math.max(6, Math.round((o.fill || 12) * 0.3)), cards: 3 });
   F.GIANT_COUNT = GIANTS.length; F.PINE_COUNT = PINES.length;
-  F.LOD_DIST = 52;                       // chunk-level: full detail inside, cheap copy outside (world/terrain.js cull)
+  // [perf] phones are draw-call bound (one draw per chunk x part): 64 m giant chunks there (4x fewer draws) and a LOD radius that grows
+  // with them so the trees next to the hero stay full copies
+  const MCH = window.__MOBILE ? 2 : 1;
+  F.LOD_DIST = window.__MOBILE ? 84 : 52;                       // chunk-level: full detail inside, cheap copy outside (world/terrain.js cull)
   F.define = function (I, M) {
     F.materials(M);
     F.kinds = {};
@@ -431,8 +434,8 @@
       I.define(name, parts, { layer: layer || 'main', chunk: chunk || 80 });
       F.kinds[name] = tpl.info;
     };
-    GIANTS.forEach((o, i) => { add('giant' + i, template((B) => giant(B, M, o.seed, o)), 'main', true, 32); add('giantL' + i, template((B) => giant(B, M, o.seed + 500, lodOf(o, o.seed + 500))), 'main', true, 32); });
-    PINES.forEach((o, i) => { add('greatpine' + i, template((B) => giant(B, M, o.seed, o)), 'main', true, 32); add('greatpineL' + i, template((B) => giant(B, M, o.seed + 500, lodOf(Object.assign({}, o, { fill: 8 }), o.seed + 500))), 'main', true, 32); });
+    GIANTS.forEach((o, i) => { add('giant' + i, template((B) => giant(B, M, o.seed, o)), 'main', true, 32 * MCH); add('giantL' + i, template((B) => giant(B, M, o.seed + 500, lodOf(o, o.seed + 500))), 'main', true, 32 * MCH); });
+    PINES.forEach((o, i) => { add('greatpine' + i, template((B) => giant(B, M, o.seed, o)), 'main', true, 32 * MCH); add('greatpineL' + i, template((B) => giant(B, M, o.seed + 500, lodOf(Object.assign({}, o, { fill: 8 }), o.seed + 500))), 'main', true, 32 * MCH); });
     add('giantFar', template((B) => giant(B, M, 57, Object.assign({}, GIANTS[0], { seed: 57, lod: true, fill: 10, cards: 4, tint: [0.6, 0.72, 0.62] }))));
     // the colossal landmark north of the keep
     add('titan', template((B) => giant(B, M, 99, { seed: 99, h: 26, r: 5.2, lobes: 8, flareH: 6, twist: 0.6, bend: 3, lean: 0.4, limbs: 9, spread: 30, lift: 18, cr: 8, cards: 9, fill: 34, tint: [0.58, 0.7, 0.8] })));

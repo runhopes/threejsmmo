@@ -19,6 +19,8 @@
   };
 
   let opts = {};
+  /* touch (phone / mobile app): no autofocus — it pops the keyboard over the screen before the player taps a field */
+  const TOUCH = !!(global.matchMedia && global.matchMedia('(pointer: coarse)').matches);
 
   /* ── küçük yardımlar ── */
   function q(sel) { return document.querySelector(sel); }
@@ -52,11 +54,12 @@
           <label class="at-fld"><span>E-posta</span><input name="email" type="email" maxlength="64"></label>
           <label class="at-fld"><span>Kullanıcı adı</span><input name="username" type="text" maxlength="16"></label>
         </div>
-        <label class="at-fld" id="at-infield"><span>Kullanıcı adı veya e-posta</span><input name="user" type="text" maxlength="64" required autofocus></label>
+        <label class="at-fld" id="at-infield"><span>Kullanıcı adı veya e-posta</span><input name="user" type="text" maxlength="64" required${TOUCH ? '' : ' autofocus'}></label>
         <label class="at-fld"><span>Şifre</span><input name="password" type="password" maxlength="64" required></label>
         <button id="at-go" type="submit">OYUNA BAĞLAN</button>
       </form>
       <div class="at-note" id="at-note">E-posta · kullanıcı adı · şifre ile kayıt olabilirsin.</div>
+      <div class="at-note"><a href="${esc((global.AtherionConfig && global.AtherionConfig.PRIVACY_URL) || 'privacy.html')}" target="_blank" rel="noopener" style="color:#A58C63">Gizlilik politikası</a></div>
     `;
 
     let mode = 'in';   // in | up
@@ -86,7 +89,7 @@
         const meR = await global.Accounts.me();
         showCharacters(meR.user, meR.characters || []);
       } catch (err) {
-        showError(err.message || 'Sunucuya ulaşılamadı — `npm start` ile yerel sunucuyu başlat.');
+        showError(err.message || 'Sunucuya ulaşılamadı. İnternet bağlantını kontrol edip tekrar dene.');
         busy(btn, mode === 'in' ? 'OYUNA BAĞLAN' : 'HESAP OLUŞTUR', false);
       }
     });
@@ -96,7 +99,8 @@
   function showCharacters(user, chars) {
     q('#at-view').innerHTML = `
       <div id="at-who"><span class="at-dim">Hesap:</span> <b>${esc(user.username)}</b>
-        <button id="at-out" type="button" class="at-mini">Çıkış</button></div>
+        <button id="at-out" type="button" class="at-mini">Çıkış</button>
+        <button id="at-del" type="button" class="at-mini">Hesabı sil</button></div>
       <h2 class="at-title">KAHRAMANLARIM</h2>
       ${!chars.length ? '<div class="at-empty">Henüz bir kahraman yok — ilk karakterini yarat!</div>' : ''}
       <div id="at-chars" class="at-cards">${chars.map((c) => `
@@ -126,6 +130,34 @@
     });
 
     q('#at-new').addEventListener('click', () => showCreate());
+    q('#at-del').addEventListener('click', () => showDeleteAccount(user, chars));
+  }
+
+  /* ── HESAP SİLME (kalıcı; App Store 5.1.1(v) uygulama içinden silme ister) ── */
+  function showDeleteAccount(user, chars) {
+    const v = viewBox(`
+      <h2 class="at-title">HESABI SİL</h2>
+      <div class="at-empty"><b>${esc(user.username)}</b> hesabı, tüm karakterleri ve ilerlemesiyle birlikte <b>kalıcı olarak</b> silinecek. Bu işlem geri alınamaz.</div>
+      <label class="at-fld"><span>Onay için şifren</span><input id="at-delpw" type="password" maxlength="64" autocomplete="current-password"></label>
+      <div class="at-actions two">
+        <button id="at-del-yes" type="button" class="at-go">HESABI KALICI SİL</button>
+        <button id="at-del-no" type="button" class="at-ghost">VAZGEÇ</button>
+      </div>
+    `);
+    v.querySelector('#at-del-no').addEventListener('click', () => showCharacters(user, chars));
+    v.querySelector('#at-del-yes').addEventListener('click', async () => {
+      const btn = v.querySelector('#at-del-yes');
+      busy(btn, 'SİLİNİYOR...', true);
+      try {
+        await global.Accounts.deleteAccount(v.querySelector('#at-delpw').value);
+        global.Accounts.setToken('');
+        showAuth();
+        const note = q('#at-note'); if (note) note.textContent = 'Hesabın ve tüm verilerin silindi.';
+      } catch (e) {
+        showError(e.message || 'Hesap silinemedi.');
+        busy(btn, 'HESABI KALICI SİL', false);
+      }
+    });
   }
 
   /* ── KARAKTER YARATMA ── */

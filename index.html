@@ -8,8 +8,7 @@
 (function () { var m = window.matchMedia && window.matchMedia("(pointer: coarse)").matches; window.__MOBILE = m; if (m && !/[?&]vshadow=/.test(location.search)) history.replaceState(null, "", location.pathname + (location.search ? location.search + "&" : "?") + "vshadow=2048" + location.hash); })();
 </script>
 <title>TDS MOBA - Knight (spike)</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<!-- mobile app: fonts are local (ui/fonts.css), three.js is vendored (vendor/) — no CDN at startup -->
 <link rel="stylesheet" href="ui/fonts.css">
 <link rel="stylesheet" href="hud.css">
 <link rel="stylesheet" href="ui/core.css">
@@ -21,6 +20,7 @@
 <link rel="stylesheet" href="ui/charwin.css">
 <link rel="stylesheet" href="ui/skillswin.css">
 <link rel="stylesheet" href="app/screens.css">
+<link rel="stylesheet" href="ui/mobilehud.css">
 <style>
   :root { --bg:#16252f; }
   * { box-sizing:border-box; }
@@ -74,8 +74,9 @@
 <script>
   window.addEventListener('error', function (e) { document.getElementById('err').textContent += 'ERR: ' + e.message + ' (' + (e.filename || '').split('/').pop() + ':' + e.lineno + ')\n'; document.title = 'ERR'; });
 </script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js" crossorigin="anonymous"></script>
+<script src="vendor/three.min.js"></script><!-- three@0.128.0 (MIT), was jsdelivr -->
+<script src="vendor/OrbitControls.js"></script>
+<script src="perf.js"></script><!-- render-loop perf patches: hidden subtrees skip the matrix walk, phones: shadows every 2nd frame -->
 <script src="textures.js"></script>
 <script src="locomotion.js"></script>
 <script src="heromodel.js"></script>
@@ -136,6 +137,7 @@
 <script src="village/scene.js"></script>
 <script src="village/integrate.js"></script>
 <!-- archer VFX: pooled particles / trails / decals (vfx/core.js) + the archer skill effects (vfx/archer.js); bench: archer-vfx.html -->
+<script src="vfx/conform.js"></script><!-- ground decals follow the terrain slopes (VfxConform, before every vfx / magefx script) -->
 <script src="vfx/marker.js"></script>
 <script src="vfx/core.js"></script>
 <script src="vfx/archer.js"></script>
@@ -152,6 +154,7 @@
 <script src="magefx/director.js"></script>
 <!-- Atherion online: hesap / karakter ekranları (app/screens.*) + dünya ağı (app/net.js: uzak oyuncular, konum kaydı,
      genel sohbet) · sunucu: `npm start` (server/src/index.js → http://localhost:3000). Ayrıntı: server/README.md -->
+<script src="app/config.js"></script><!-- API base: web = same origin, native app = mmorpg.thebora.dev -->
 <script src="app/api.js"></script>
 <script src="app/net.js"></script>
 <script src="app/screens.js"></script>
@@ -180,6 +183,7 @@
     onSkill: (i) => castSkill(i),
     onEscape: () => { if (targetSel) { targetSel = null; return true; } return false; },
     onRestart: () => { location.href = location.pathname; },     // back to the class selection
+    onRevive: (mode) => reviveHero(mode),                      // [death choices] ui/death.js: 'town' (full, plaza) | 'here' (half health)
     onToggleWalk: () => { walkMode = !walkMode; },                 // walk / run knob on the action bar (same as C)
     keys: [['W A S D', 'Hareket'], ['Sağ tık', 'Hedefe: koş ve saldır (tekrar tıkla / basılı tut) · zemine: yürü'], ['1 – 8', 'Yetenekler (Q = 1)'],
       ['C', 'Yürü / koş'], ['Orta tuş', 'Kamerayı döndür (sürükle)'], ['Tekerlek', 'Yakınlaştır / uzaklaştır'], ['P · K · M · I', 'Karakter · Yetenekler · Harita · Envanter'], ['Enter', 'Sohbet satırı'],
@@ -255,6 +259,8 @@
   // selected-target ring on the ground (neutral = amber); faded in / out by updateHUD
   const targetRing = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.05, 72), new THREE.MeshBasicMaterial({ color: 0xc49a55, transparent: true, opacity: 0, depthWrite: false }));
   targetRing.rotation.x = -Math.PI / 2; targetRing.position.y = 0.035; scene.add(targetRing);
+  const conform = (m, o) => (window.VfxConform ? VfxConform.attach(m, o) : m);   // [conform] ground decals lie on the slope (vfx/conform.js)
+  conform(targetRing, { lift: 0.035 });
 
   /* ---------- knight ---------- */
   const forcedCls = q.get('cls');
@@ -584,6 +590,20 @@
     if (T && engageGap(T) <= ATTACK_RANGE[knight.cls]) { strikeAt(T); engage.presses = 0; }
   }
 
+  /* [death choices] revive after death: 'town' = the village plaza with full health / mana, 'here' = on the spot with half health */
+  function reviveHero(mode) {
+    if (!hero || !knight || hero.hp > 0) return;
+    const town = mode === 'town' && VW && VW.spawn;
+    if (town) {
+      const sp = VW.spawn('plaza');
+      knight.root.position.copy(sp.position); yaw = sp.yaw; knight.root.rotation.y = yaw;   // the follow camera moves with the hero (delta)
+      moveTarget = null; movePath = null; engage = null; targetSel = null;
+    }
+    knight.revive();
+    hero.hp = Math.round(hero.maxHp * (town ? 1 : 0.5)); if (town) hero.mp = hero.maxMp;
+    hero.hurtT = 99;
+    hud.logLine('system', town ? 'Kasabada dirildin.' : 'Olduğun yerde dirildin.', 'sys');
+  }
   /* mobile.js hooks: fire button + aim by holding a finger on the world (no tap-to-move on touch) */
   window.__mobile = {
     mv: null,                                                   // joystick move direction (world x / z) or null
@@ -597,6 +617,18 @@
       return false;
     },
     hold(on) { mouseHeld = !!on; },
+    /* [mobile HUD] skill buttons (ui/mobilehud.js): no cursor on touch — aim at the selected creature, else the nearest one in reach
+       (it becomes the target), else straight ahead of the hero */
+    cast(i) {
+      if (selecting || !knight || knight.dead) return;
+      const kp = knight.root.position;
+      let C = creatures && targetSel ? creatures.byKey(targetSel) : null;
+      if (!C || !C.alive || Math.hypot(C.x - kp.x, C.z - kp.z) > 22) { C = creatures && creatures.nearest(kp.x, kp.z, 18); if (C) targetSel = 'cr:' + C.id; }
+      lastPointer = null;
+      if (C) mouseGround.set(C.x, mouseGround.y, C.z);
+      else { const a = knight.root.rotation.y; mouseGround.set(kp.x + Math.sin(a) * 9, mouseGround.y, kp.z + Math.cos(a) * 9); }
+      castSkill(i);
+    },
   };
 
   window.addEventListener('keydown', (e) => {
@@ -886,12 +918,12 @@
   const ringGeo = new THREE.RingGeometry(0.8, 1, 64);
   function shockwave(point, radius) {
     const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffb35a, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
-    m.rotation.x = -Math.PI / 2; m.position.set(point.x, 0.05, point.z); scene.add(m);
+    m.rotation.x = -Math.PI / 2; m.position.set(point.x, 0.05, point.z); scene.add(m); conform(m, { transient: true });   // [conform]
     decals.push({ m, t: 0, life: 0.5, kind: 'ring', radius });
   }
   function scorch(point, radius) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x000000, transparent: true, opacity: 0.75, depthWrite: false }));
-    m.rotation.x = -Math.PI / 2; m.position.set(point.x, 0.015, point.z); m.scale.setScalar(radius * 2.2); scene.add(m);
+    m.rotation.x = -Math.PI / 2; m.position.set(point.x, 0.015, point.z); m.scale.setScalar(radius * 2.2); scene.add(m); conform(m, { seg: 10, transient: true });   // [conform]
     const e = glowSprite(0xff5a10, radius * 1.4, 0.7); e.position.set(point.x, 0.12, point.z); scene.add(e);   // embers glowing in the crater (normal blend: stays orange)
     decals.push({ m, e, t: 0, life: 4.5, kind: 'scorch', radius });
   }
@@ -1036,7 +1068,7 @@
     R = R || METEOR_R;
     const mk = (scale, color) => {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: circleTex, color, transparent: true, opacity: 0, depthWrite: false }));
-      m.rotation.x = -Math.PI / 2; m.position.set(point.x, 0.03, point.z); m.scale.setScalar(scale); scene.add(m); return m;
+      m.rotation.x = -Math.PI / 2; m.position.set(point.x, 0.03, point.z); m.scale.setScalar(scale); scene.add(m); return conform(m, { seg: 14, transient: true });   // [conform]
     };
     const C = { point: point.clone(), R, col: cIn || 0xffc050, outer: mk(R * 2.1, cOut || 0xff6a1a), inner: mk(R * 1.15, cIn || 0xffb030), t: 0, fade: -1 };
     circles.push(C); return C;
@@ -1508,7 +1540,7 @@
   // ---- skill world effects (fired on the move's contact event) ----
   function shockwaveC(point, radius, color) {
     const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
-    m.rotation.x = -Math.PI / 2; m.position.set(point.x, 0.05, point.z); scene.add(m);
+    m.rotation.x = -Math.PI / 2; m.position.set(point.x, 0.05, point.z); scene.add(m); conform(m, { transient: true });   // [conform]
     decals.push({ m, t: 0, life: 0.5, kind: 'ring', radius });
   }
   function areaDamage(center, radius, base, opts) {
@@ -1742,7 +1774,7 @@
 
   // ---- per-frame: regen, cooldowns, buffs, queued casts, auras, DOM ----
   const auraRing = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.8, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
-  auraRing.rotation.x = -Math.PI / 2; scene.add(auraRing);
+  auraRing.rotation.x = -Math.PI / 2; scene.add(auraRing); conform(auraRing, { lift: 0.04 });   // [conform]
   const fmt = (n) => Math.round(n).toLocaleString('tr');
   const hudState = {}, buffIcons = {};
   const buffIcon = (id) => buffIcons[id] || (buffIcons[id] = id === 'poison' ? iconSVG('parrow', '#5aa83a', '#0c1d07') : iconSVG(BUFFS[id].icon, BUFFS[id].c[0], BUFFS[id].c[1]));
@@ -2135,6 +2167,7 @@
     moveMark.update(dt, !!moveTarget);
     if (moveTarget && VW && VW.World) marker.position.y = fY(marker.position.x, marker.position.z) + 0.035;   // the move marker rides the slope
 
+    if (window.VfxConform) VfxConform.update();   // [conform] decals onto the terrain, after every effect moved this frame
     renderer.render(scene, camera);
     frames++; fpsT += dt;
     if (fpsT > 0.5) { hud.setPerf({ fps: Math.round(frames / fpsT) }); frames = 0; fpsT = 0; }
@@ -2143,5 +2176,6 @@
 })();
 </script>
 <script src="mobile.js"></script>
+<script src="ui/mobilehud.js"></script><!-- touch HUD (phones / native app), styles ui/mobilehud.css -->
 </body>
 </html>
