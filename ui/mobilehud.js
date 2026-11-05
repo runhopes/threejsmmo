@@ -407,7 +407,14 @@
   function perfAndPing() {
     let fps = 0, ping = null;
     hud.settings.perf = true; if (hud.applyPerf) hud.applyPerf();
-    const write = () => { if (hud.minimap && hud.minimap.perf) hud.minimap.perf.textContent = (fps ? fps + ' fps' : '') + (ping !== null ? (fps ? ' · ' : '') + ping + ' ms' : ''); };
+    // + a sound diagnostic, only while game audio is NOT working (context state · clips loaded · last error)
+    const sound = () => {
+      const S = window.Sfx; if (!S) return ' · ses yok';
+      const st = S._ctx ? S._ctx.state : 'yok', n = Object.keys(S._bufs || {}).length;
+      if (st === 'running' && n > 0) return '';
+      return ' · ses: ' + st + ' ' + n + '/18' + (S.lastError ? ' ' + String(S.lastError).slice(0, 28) : '');
+    };
+    const write = () => { if (hud.minimap && hud.minimap.perf) hud.minimap.perf.textContent = (fps ? fps + ' fps' : '') + (ping !== null ? (fps ? ' · ' : '') + ping + ' ms' : '') + sound(); };
     hud.setPerf = function (p) { if (p && p.fps) fps = p.fps; write(); };
     const base = (window.AtherionConfig && window.AtherionConfig.API_BASE) || '';
     async function probe() {

@@ -75,7 +75,20 @@
       master.connect(an); master.connect(ctx.destination);
       // a gesture also retries the clip load once if it found nothing at startup (app WebViews can refuse requests that early)
       let retried = false;
-      const unlock = () => { if (ctx.state === 'suspended') ctx.resume().catch(() => {}); if (!retried && Sfx.ready === false && !Object.keys(Sfx._bufs).length) { retried = true; Sfx._load(); } };
+      // iOS / WebKit: the context can sit in 'interrupted' (not only 'suspended') — before the first gesture, after a call or after the
+      // app was in the background. Every gesture resumes it while it is not 'running', and plays a 1-sample silent buffer INSIDE the
+      // gesture (WebKit only unlocks output for a source started from a user gesture).
+      const kick = () => {
+        try { const b = ctx.createBuffer(1, 1, ctx.sampleRate), src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination); src.start(0); } catch (e) { /* ignore */ }
+      };
+      Sfx.unlocked = false;
+      const unlock = () => {
+        if (ctx.state !== 'running') { kick(); ctx.resume().then(() => { Sfx.unlocked = ctx.state === 'running'; }).catch((e) => { Sfx.lastError = 'resume: ' + (e && e.message); }); }
+        else Sfx.unlocked = true;
+        if (!retried && Sfx.ready === false && !Object.keys(Sfx._bufs).length) { retried = true; Sfx._load(); }
+      };
+      ctx.onstatechange = () => { if (ctx.state !== 'running') Sfx.unlocked = false; };
+      global.document && global.document.addEventListener('visibilitychange', () => { if (!global.document.hidden && ctx.state !== 'running') ctx.resume().catch(() => {}); });
       // [mobile] iOS only lets touchend / click start audio, and the touch layer (mobile.js) stops world pointerdowns in the capture
       // phase: listen in the capture phase too, on every gesture kind
       for (const ev of ['pointerdown', 'keydown', 'touchstart', 'touchend', 'click']) global.addEventListener(ev, unlock, { passive: true, capture: true });
@@ -98,7 +111,7 @@
       // [mobile] the app's bundled files: the WebView's own fetch (CapacitorWebFetch when a native HTTP patch is installed)
       (global.CapacitorWebFetch || global.fetch)(base + n + '.wav').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(0)))
         .then((ab) => new Promise((res, rej) => Sfx._ctx.decodeAudioData(ab, res, rej)))
-        .then((buf) => { Sfx._bufs[n] = buf; }).catch(() => {}).then(done);
+        .then((buf) => { Sfx._bufs[n] = buf; }).catch((e) => { Sfx.lastError = n + ': ' + (e && (e.message || e.name) || e); }).then(done);
     }
   };
 
