@@ -278,6 +278,9 @@
       power: o.power, reach: o.reach, cosArc: o.cosArc, hitstop: o.hitstop, shake: o.shake, trailColor: o.trailColor,
       headTrack: o.headTrack === undefined ? 0.7 : o.headTrack, shieldHold: o.shieldHold || 0, slam: !!o.slam,
       pivot: o.pivot || null,
+      bendScale: o.bendScale,                        // optional per-action multiplier on the blade bend physics (the overhead slam moves so fast that the bend saturated = a curled blade)
+      wristMin: o.wristMin,                          // optional per-action lower wrist limit (rad): lets a slam keep blade and forearm in one line
+
       // gameplay-facing times in seconds of the base timeline
       impact: o.phases.contact * D, swingAt: o.phases.antic * D,
       hitWinN: o.hit, hitWin: o.hit.map((w) => [w[0] * D, w[1] * D]),
@@ -496,7 +499,7 @@
   //    arches; the front foot steps, the trunk crunches forward, the arm unfolds over the top and the wrist throws the blade
   //    up, over and down: straight arm and a level blade at contact, front knee sinks, held pause, slow recovery.
   const A3 = attackProfile({
-    name: 'attack3', label: 'Overhead strike', dur: 1.05, path: 'smooth', lag: SWING_LAG,
+    name: 'attack3', label: 'Overhead strike', dur: 1.05, path: 'smooth', lag: SWING_LAG, wristMin: 0.14, bendScale: 0.25,
     //        start raise  cock  drive  over  CONTACT pause recover end
     keys:    [0,    0.22,  0.38, 0.45,  0.51, 0.57,   0.7,  0.86,   1],
     phases: { antic: 0.38, contact: 0.57, follow: 0.72 },
@@ -504,8 +507,8 @@
     buffer: 0.3, chain: 0.8, move: 0.82, chainSkip: 0.06, blendIn: 0.14,
     power: 2.0, reach: 3.0, cosArc: 0.35, hitstop: 0.12, shake: 0.22, slam: true, trailColor: 0xffe2a0, shieldHold: 0, headTrack: 0.6,
     fx: { kind: 'ring', t0: 0.57, t1: 0.82, z: 1.9, grow: 1.4 },
-    hand:  [G.h, HP(-30, 40, 0.48), HP(-30, 80, 0.42), HP(-20, 66, 0.52), HP(-12, 30, 0.62), HP(-6, 8, 0.668), HP(-5, 6, 0.66), HP(-40, -56, 0.58), G.h],
-    blade: [G.b, BD(180, 60), BD(178, -45), BD(178, 30), BD(178, 85), BD(0, -36), BD(2, -38), [-0.3, 0.5, 0.8], G.b],
+    hand:  [G.h, HP(-30, 40, 0.48), HP(-30, 80, 0.42), HP(-20, 66, 0.52), HP(-12, 30, 0.62), HP(-6, -21, 0.668), HP(-5, -22, 0.66), HP(-40, -56, 0.58), G.h],
+    blade: [G.b, BD(180, 62), BD(176, 5), BD(170, 38), BD(25, 52), BD(0, -23), BD(2, -24), [-0.3, 0.5, 0.8], G.b],   // windup keeps the blade <= ~95 deg off the forearm (was folded back to 135 deg = the 'curl')
     edge:  [G.e, [0, -0.1, 0.99], BD(180, 45), null, null, null, '<', [0.5, -0.8, 0.1], G.e],
     body: {
       'body.py':  [0, -0.08, 0.0, -0.02, -0.14, -0.42, -0.44, -0.14, 0],
@@ -2743,7 +2746,8 @@
         const vW = tgt.clone().sub(B.Tp).divideScalar(Math.max(dt, 1e-4));
         this.sword.getWorldQuaternion(B.wq);
         const vL = vW.applyQuaternion(B.wq.invert()).divideScalar(this.sword.scale.x);
-        const LAG = 0.0042, w = 22, z = 0.28;                    // tip trails by speed * LAG; bend spring (overshoot ~40%)
+        const bs = this.action && this.action.def && this.action.def.bendScale !== undefined ? this.action.def.bendScale : 1;
+        const LAG = 0.0042 * bs, w = 22, z = 0.28;               // tip trails by speed * LAG; bend spring (overshoot ~40%)
         const goal = new V(-vL.x * LAG, 0, -vL.z * LAG);
         const h = Math.min(dt, 1 / 30), steps = Math.max(1, Math.ceil(h / (1 / 240))), sub = h / steps;
         for (let i = 0; i < steps; i++) {
@@ -2751,7 +2755,7 @@
           B.V.addScaledVector(acc, sub);
           B.bend.addScaledVector(B.V, sub);
         }
-        const MAXB = 0.22;                                       // sword-local units (~0.27 m at the tip)
+        const MAXB = 0.22 * bs;                                  // sword-local units (~0.27 m at the tip)
         if (B.bend.length() > MAXB) { B.bend.setLength(MAXB); B.V.multiplyScalar(0.5); }
         B.maxBend = Math.max(B.maxBend, B.bend.length() * this.sword.scale.x);
       }
@@ -2763,7 +2767,8 @@
       if (!this._bp || !this._bp.init) return;
       const q = this.sword.getWorldQuaternion(new T.Quaternion()).invert();
       const d = dirW.clone().applyQuaternion(q); d.y = 0;
-      this._bp.V.addScaledVector(d, 3.0 * Math.min(1.5, power || 1));
+      const bs = this.action && this.action.def && this.action.def.bendScale !== undefined ? this.action.def.bendScale : 1;
+      this._bp.V.addScaledVector(d, 3.0 * Math.min(1.5, power || 1) * bs);
     }
     _applyBend() {
       const b = this._bp ? this._bp.bend : null;
@@ -2935,14 +2940,15 @@
       // Keep the angle between forearm and blade inside [WRIST_MIN, WRIST_MAX] by swinging the blade about the wrist.
       {
         const dotFB = clamp(I.f.dot(I.B), -1, 1), ang = Math.acos(dotFB);
-        const lim = ang < WRIST_MIN ? WRIST_MIN : (ang > WRIST_MAX ? WRIST_MAX : 0);
+        const act = this.action, WM = act && act.def && act.def.wristMin !== undefined ? act.def.wristMin : (this.wristMinOverride !== undefined ? this.wristMinOverride : WRIST_MIN);
+        const lim = ang < WM ? WM : (ang > WRIST_MAX ? WRIST_MAX : 0);
         if (lim) {
           I.Y.copy(I.B).addScaledVector(I.f, -dotFB);                  // blade component perpendicular to the forearm
-          if (lim === WRIST_MIN) {
+          if (lim === WM) {
             // blade (nearly) in line with the forearm: swing it about the wrist so it TRAILS behind its cutting edge -
             // the wrist leads the cut and the blade follows inside the swing plane. Near the cone boundary the blade
             // keeps its own direction (s -> 1), so the correction is continuous and never snaps.
-            const s = clamp(ang / WRIST_MIN, 0, 1);
+            const s = clamp(ang / WM, 0, 1);
             if (I.Y.lengthSq() > 1e-8) I.Y.normalize();
             I.d.copy(I.Tn).addScaledVector(I.f, -I.Tn.dot(I.f));
             if (I.d.lengthSq() > 1e-6) { I.d.normalize(); I.Y.multiplyScalar(s * s).addScaledVector(I.d, -(1 - s * s) - 0.12); }
