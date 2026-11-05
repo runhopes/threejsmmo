@@ -1,0 +1,7 @@
+/* TDS HUD part — game menu / settings window (ui/menuwin.js). The window is a full-viewport modal: 0.5 black dim + a centred canvas leaf. */
+.mw-win { position: fixed; inset: 0; pointer-events: none; }
+.mw-dim { position: absolute; inset: 0; background: rgba(0, 0, 0, .5); pointer-events: auto; }
+.mw-leaf { position: absolute; left: 0; top: 0; pointer-events: auto; }
+.mw-cv, .mw-pcv { display: block; }
+.mw-catch { position: absolute; inset: 0; pointer-events: auto; }
+.mw-pop { position: absolute; pointer-events: auto; }

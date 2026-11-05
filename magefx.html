@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mage VFX Lab (dev)</title>
+<style>
+  :root { --bg:#16252f; --panel:rgba(12,20,27,.88); --line:rgba(160,200,230,.18); --txt:#dcecf7; --dim:#8aa8bc; --acc:#e3b540;
+          --fire:#ff8a2a; --frost:#6cc4f0; --storm:#9fb4ff; --arcane:#b98cff; --ward:#7fa4ff; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--txt); font:12px/1.4 system-ui,Segoe UI,sans-serif; }
+  canvas { display:block; width:100%; height:100%; }
+  .panel { position:fixed; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:9px 11px; }
+  #ctl { top:10px; left:10px; width:292px; max-height:calc(100% - 20px); overflow:auto; }
+  #side { top:10px; right:10px; width:300px; max-height:calc(100% - 20px); overflow:auto; }
+  h3 { margin:10px 0 5px; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); font-weight:600; }
+  h3:first-child { margin-top:0; }
+  .title { font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:2px; }
+  .sub { color:var(--dim); font-size:11px; }
+  .row { display:flex; flex-wrap:wrap; gap:4px; }
+  button { all:unset; cursor:pointer; padding:4px 8px; border-radius:5px; border:1px solid var(--line); background:rgba(255,255,255,.04); font-weight:600; font-size:11.5px; }
+  button:hover { background:rgba(255,255,255,.12); }
+  button.on { background:var(--acc); color:#1b1b1b; border-color:var(--acc); }
+  #spells { display:grid; grid-template-columns:1fr 1fr; gap:4px; }
+  #spells button { display:flex; align-items:center; gap:7px; padding:6px 8px; }
+  #spells button .k { display:inline-grid; place-items:center; width:17px; height:17px; border-radius:4px; background:rgba(255,255,255,.1); font:700 10.5px ui-monospace,Consolas,monospace; }
+  #spells button .d { width:7px; height:7px; border-radius:50%; margin-left:auto; }
+  #spells button.cur { border-color:var(--acc); box-shadow:inset 0 0 0 1px var(--acc); }
+  label { display:flex; align-items:center; gap:6px; margin:3px 0; }
+  label span.n { width:118px; color:var(--dim); flex:none; }
+  label span.v { width:42px; text-align:right; font:11px ui-monospace,Consolas,monospace; flex:none; }
+  input[type=range] { flex:1; min-width:0; accent-color:var(--acc); }
+  #stats { font:11px/1.55 ui-monospace,Consolas,monospace; white-space:pre; color:#cfe2ee; }
+  #tl { width:100%; height:74px; display:block; background:rgba(0,0,0,.25); border-radius:5px; }
+  #hint { position:fixed; left:50%; bottom:10px; transform:translateX(-50%); color:var(--dim); font-size:11px; background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:5px 10px; white-space:nowrap; }
+  #err { position:fixed; left:310px; top:8px; color:#ff6b6b; font:12px monospace; white-space:pre-wrap; z-index:9; }
+  #loading { position:fixed; inset:0; display:grid; place-items:center; background:var(--bg); color:var(--dim); font-size:13px; z-index:20; }
+  .dmg { position:fixed; pointer-events:none; font:800 17px system-ui; color:#ffe3b0; text-shadow:0 1px 0 #000, 0 0 6px #000; transform:translate(-50%,-50%); white-space:nowrap; z-index:4; }
+  .dmg.big { font-size:23px; color:#ffb070; }
+  .shot .panel, .shot #hint { display:none; }
+  textarea#out { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); width:420px; height:320px; z-index:30; background:#0d151b; color:#cfe2ee; border:1px solid var(--line); font:11px ui-monospace,Consolas,monospace; display:none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="loading">Sahne hazırlanıyor…</div>
+<div id="err"></div>
+<textarea id="out" spellcheck="false"></textarea>
+<div id="ctl" class="panel">
+  <div class="title">Büyücü VFX Laboratuvarı</div>
+  <div class="sub">Gerçek büyücü animasyonları, oyun kamerası, köy zemini</div>
+  <h3>Büyüler</h3>
+  <div id="spells"></div>
+  <div class="row" style="margin-top:6px">
+    <button id="replay" title="Space">Tekrar ⎵</button><button id="loop" title="L">Döngü (L)</button><button id="all" title="0">Sırayla hepsi (0)</button>
+  </div>
+  <h3>Oynatma</h3>
+  <label><span class="n">Zaman ölçeği</span><input type="range" id="speed" min="0.05" max="2" step="0.05" value="1"><span class="v" id="speedV">1.00x</span></label>
+  <div class="row"><button data-sp="0.1">0.1x</button><button data-sp="0.25">0.25x</button><button data-sp="0.5">0.5x</button><button data-sp="1">1x</button><button id="pause" title="P">Duraklat (P)</button><button id="step" title=".">Kare +</button></div>
+  <h3>Hedef</h3>
+  <label><span class="n">Mesafe</span><input type="range" id="dist" min="3" max="14" step="0.5" value="7"><span class="v" id="distV">7.0 m</span></label>
+  <div class="row" id="tgtRow"></div>
+  <div class="row" style="margin-top:4px"><button id="homing" class="on">Güdümlü mermi</button><button id="radius">Oyun yarıçapı</button></div>
+  <div class="sub" style="margin-top:4px">Sol tık zemine: hedefi oraya taşı · WASD: büyücüyü yürüt</div>
+  <h3>Kamera</h3>
+  <div class="row" id="camRow"></div>
+  <h3>Kalite</h3>
+  <div class="row" id="qRow"></div>
+  <h3>Dünya</h3>
+  <div class="row" id="worldRow"></div>
+  <h3>Mana Kalkanı</h3>
+  <div class="row"><button id="hit" title="H">Vuruş al (H)</button><button id="brk" title="B">Kır (B)</button><button id="autohit">Oto vuruş</button></div>
+</div>
+<div id="side" class="panel">
+  <h3>Zamanlama · <span id="tunName">—</span></h3>
+  <div id="tun"></div>
+  <div class="row" style="margin-top:6px"><button id="tunReset">Varsayılan</button><button id="tunAll">Hepsini sıfırla</button><button id="tunCopy">JSON kopyala</button></div>
+  <h3>Genel</h3>
+  <div id="tunG"></div>
+  <h3>Son büyünün zaman çizelgesi</h3>
+  <canvas id="tl" width="560" height="148"></canvas>
+  <h3>Performans</h3>
+  <div id="stats"></div>
+</div>
+<div id="hint">1–9 büyü · Space tekrar · L döngü · 0 hepsi · P duraklat · . kare · WASD yürü · H kalkana vuruş · orta tuş: döndür · tekerlek: yakınlaştır</div>
+
+<script>window.addEventListener('error', (e) => { document.getElementById('err').textContent += 'ERR: ' + e.message + ' (' + (e.filename || '').split('/').pop() + ':' + e.lineno + ')\n'; document.title = 'ERR'; });</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="textures.js"></script>
+<script src="locomotion.js"></script>
+<script src="heromodel.js"></script>
+<script src="knight.js"></script>
+<script src="creatures/defs.js"></script>
+<script src="creatures/core.js"></script>
+<script src="creatures/species/goblin.js"></script>
+<script src="creatures/species/wolf.js"></script>
+<script src="creatures/species/boar.js"></script>
+<script src="village/core.js"></script>
+<script src="village/materials.js"></script>
+<script src="village/terrain.js"></script>
+<script src="village/architecture.js"></script>
+<script src="village/fortifications.js"></script>
+<script src="village/props.js"></script>
+<script src="village/phtex.js"></script>
+<script src="village/forest.js"></script>
+<script src="village/atmosphere.js"></script>
+<script src="village/scene.js"></script>
+<script src="village/integrate.js"></script>
+<script src="magefx/core.js"></script>
+<script src="magefx/particles.js"></script>
+<script src="magefx/trails.js"></script>
+<script src="magefx/ground.js"></script>
+<script src="magefx/meshes.js"></script>
+<script src="magefx/spells.js"></script>
+<script src="magefx/director.js"></script>
+<script>
+(function () {
+  'use strict';
+  const q = new URLSearchParams(location.search);
+  const $ = (id) => document.getElementById(id);
+  if (q.has('shot')) document.body.classList.add('shot');
+  const canvas = $('c');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: q.has('shot') });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const BG = 0x16252f, scene = new THREE.Scene();
+  scene.background = new THREE.Color(BG); scene.fog = new THREE.Fog(BG, 24, 64);
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
+
+  /* ---------- the game's lighting rig (index.html): PMREM env, hemisphere, shadowed sun, cool rim ---------- */
+  (function makeEnv() {
+    const s = new THREE.Scene(), geo = new THREE.SphereGeometry(10, 24, 16), p = geo.attributes.position, col = [];
+    const top = new THREE.Color(0xe4efff), mid = new THREE.Color(0x7d96ad), bot = new THREE.Color(0x182733);
+    for (let i = 0; i < p.count; i++) { const y = p.getY(i) / 10; const c = y > 0 ? mid.clone().lerp(top, Math.pow(y, 0.7)) : mid.clone().lerp(bot, Math.min(1, -y * 1.6)); col.push(c.r, c.g, c.b); }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    s.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+    const soft = (w, h, pos, I, color) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(I), side: THREE.DoubleSide })); m.position.set(...pos); m.lookAt(0, 0, 0); s.add(m); };
+    soft(7, 3, [-6, 6, 5], 5, 0xfff2e0); soft(4, 7, [7, 3, -5], 3, 0x9cc8ff); soft(5, 2, [0, 8, -3], 2, 0xffffff);
+    const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(s, 0.02).texture; pm.dispose();
+  })();
+  scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x2a3a46, 0.45));
+  const sun = new THREE.DirectionalLight(0xfff1dd, 1.0);
+  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8, near: 1, far: 40 }); sun.shadow.bias = -0.0006;
+  scene.add(sun, sun.target);
+  const SUN_OFF = new THREE.Vector3(-6, 12, 7);
+  const rim = new THREE.DirectionalLight(0x7fb2ff, 0.55); rim.position.set(5, 5, -7); scene.add(rim);
+  // the game's two shared point lights (MageFX borrows them, exactly like index.html)
+  const pl1 = new THREE.PointLight(0xff8a3a, 0, 8, 2), pl2 = new THREE.PointLight(0xffa050, 0, 12, 2); scene.add(pl1, pl2);
+
+  /* ---------- world: Taşkale village (default, like the game) or the old plain arena ---------- */
+  const world = q.get('world') === 'arena' ? 'arena' : 'village';
+  let VW = null, home = new THREE.Vector3(0, 0, 0), homeYaw = Math.PI;
+  if (world === 'village' && window.Village) {
+    VW = Village.forGame({ renderer, scene, camera, sun, rim });
+    const sp = (q.get('spawn') || '36,57').split(',').map(Number);
+    home.set(sp[0], 0, sp[1]);                                   // open west half of the training yard, facing north (up the screen)
+  } else {
+    const g = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), new THREE.MeshStandardMaterial({ color: 0x20384a, roughness: 1 }));
+    g.rotation.x = -Math.PI / 2; g.receiveShadow = true; scene.add(g);
+    const grid = new THREE.GridHelper(120, 120, 0x3b5d75, 0x2c4659); grid.position.y = 0.01; grid.material.transparent = true; grid.material.opacity = 0.45; scene.add(grid);
+  }
+
+  /* ---------- the mage ---------- */
+  const knight = new Knight({ cls: 'mage' });
+  scene.add(knight.root); scene.add(knight.trail.mesh); scene.add(knight.slash.group);
+  knight.root.position.copy(home); let yaw = homeYaw; knight.root.rotation.y = yaw;
+  window.__knight = knight; window.__camera = camera;
+
+  /* ---------- targets: training dummy + creature silhouettes (readability: they must stay visible through the VFX) ---------- */
+  const targets = [];
+  function makeDummy() {
+    const g = new THREE.Group();
+    const mat = (c, o) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.85, metalness: 0, flatShading: true }, o || {}));
+    const wood = mat(0x7b5233), straw = mat(0xd2b26d), red = mat(0xb5382f), white = mat(0xf0e6ce), iron = mat(0x4a5564, { metalness: 0.5, roughness: 0.5 });
+    const add = (p, geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x || 0, y || 0, z || 0); o.castShadow = true; o.receiveShadow = true; p.add(o); return o; };
+    add(g, new THREE.CylinderGeometry(0.75, 0.85, 0.16, 12), wood, 0, 0.08, 0);
+    const piv = new THREE.Group(); piv.position.y = 0.16; g.add(piv);
+    add(piv, new THREE.CylinderGeometry(0.1, 0.12, 1.9, 7), wood, 0, 0.95, 0);
+    add(piv, new THREE.BoxGeometry(1.25, 0.12, 0.12), wood, 0, 1.6, 0);
+    add(piv, new THREE.CylinderGeometry(0.34, 0.3, 0.85, 8), straw, 0, 1.3, 0).scale.z = 0.8;
+    for (const [r, m, z] of [[0.3, red, 0.28], [0.2, white, 0.285], [0.1, red, 0.29]]) { const d = add(piv, new THREE.CylinderGeometry(r, r, 0.03, 14), m, 0, 1.35, z); d.rotation.x = Math.PI / 2; }
+    add(piv, new THREE.SphereGeometry(0.27, 8, 6), straw, 0, 2.0, 0);
+    scene.add(g);
+    return { kind: 'dummy', g, piv, mats: [wood, straw, red, white, iron], pos: g.position, radius: 0.42, height: 2.25, bodyY: 1.3, th: 0, om: 0, axis: new THREE.Vector3(1, 0, 0), flash: 0, off: new THREE.Vector3() };
+  }
+  function makeCreature(id, off) {
+    if (!window.CreatureKit || !CreatureKit.SPECIES[id]) return null;
+    const v = new CreatureKit.CreatureView(id); scene.add(v.root);
+    const D = CREATURE_DEFS.SPECIES[id];
+    return { kind: 'creature', id, v, pos: v.root.position, radius: D.radius || 0.5, height: Math.max(1.0, D.height || 1.2), bodyY: Math.min(1.3, Math.max(0.4, (D.height || 1.2) * 0.55)), off: new THREE.Vector3(off[0], 0, off[1]) };
+  }
+  const dummy = makeDummy(); targets.push(dummy);
+  // offsets in a frame where +z points toward the hero: flanks + behind, never in the line of fire
+  const crowd = [makeCreature('goblin', [-1.9, 0.1]), makeCreature('wolf', [2.0, 0.3]), makeCreature('boar', [0.6, -2.0])].filter(Boolean);
+  let targetMode = q.get('tg') || 'crowd';                      // dummy | crowd | none
+  const tgtCenter = new THREE.Vector3();
+  let tgtDist = 7;
+  function placeTargets(center) {
+    if (center) tgtCenter.copy(center).setY(0);
+    else tgtCenter.copy(knight.root.position).add(new THREE.Vector3(Math.sin(homeYaw), 0, Math.cos(homeYaw)).multiplyScalar(tgtDist)).setY(0);
+    const face = Math.atan2(knight.root.position.x - tgtCenter.x, knight.root.position.z - tgtCenter.z);
+    dummy.g.visible = targetMode !== 'none';
+    dummy.g.position.copy(tgtCenter).add(new THREE.Vector3(0, 0, -1.1).applyAxisAngle(new THREE.Vector3(0, 1, 0), face));   // just behind the aim point: its base would hide the decals
+    for (const c of crowd) {
+      const on = targetMode === 'crowd'; c.v.root.visible = on;
+      const r = c.off.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), face);
+      c.v.teleport(tgtCenter.x + r.x, tgtCenter.z + r.z, face + (Math.random() - 0.5) * 0.4);
+    }
+  }
+  const liveTargets = () => targets.filter((t) => t.g.visible).concat(targetMode === 'crowd' ? crowd : []);
+
+  /* ---------- camera: the game's iso preset + orbit controls (middle drag, wheel 3.5..24 m), following the hero ---------- */
+  const controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true; controls.dampingFactor = 0.12; controls.enablePan = false;
+  controls.mouseButtons = { LEFT: -1, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: -1 };
+  controls.minDistance = 3.5; controls.maxDistance = 24; controls.minPolarAngle = 0.15; controls.maxPolarAngle = Math.PI / 2 - 0.05;
+  const CAMS = {
+    game:  { label: 'Oyun', pos: [0, 6.8, 8.6], tgt: [0, 1.3, 0] },
+    far:   { label: 'Uzak (24 m)', pos: [0, 6.8, 8.6], tgt: [0, 1.3, 0], dist: 23.5 },
+    close: { label: 'Yakın', pos: [0, 6.8, 8.6], tgt: [0, 1.3, 0], dist: 5.5 },
+    top:   { label: 'Üstten', pos: [0, 13, 2.6], tgt: [0, 0.8, 0] },
+    side:  { label: 'Yandan', pos: [9, 2.2, -3], tgt: [0, 1.5, -3] },
+  };
+  let camName = q.get('cam') || 'game';
+  function setCam(name) {
+    camName = CAMS[name] ? name : 'game'; const C = CAMS[camName], kp = knight.root.position;
+    const tgt = new THREE.Vector3(...C.tgt).add(kp), off = new THREE.Vector3(...C.pos).sub(new THREE.Vector3(...C.tgt));
+    if (C.dist) off.setLength(C.dist);
+    controls.target.copy(tgt); camera.position.copy(tgt).add(off); controls.update();
+    document.querySelectorAll('#camRow button').forEach((b) => b.classList.toggle('on', b.dataset.cam === camName));
+  }
+  function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+  addEventListener('resize', resize); resize();
+
+  /* ---------- camera feel: same trauma shake + FOV punch as the game ---------- */
+  let shake = 0, punch = 0; const lastShake = new THREE.Vector3();
+
+  /* ---------- MageFX ---------- */
+  let tuning = JSON.parse(JSON.stringify(MageFX.TUNING_DEFAULT));
+  try { const saved = JSON.parse(localStorage.getItem('mfx.tuning') || 'null'); if (saved) for (const k in saved) if (tuning[k]) Object.assign(tuning[k], saved[k]); } catch (e) {}
+  const events = [];                                            // timeline of the last cast
+  let castT0 = 0, simTime = 0;
+  const fx = MageFX.create({ scene, camera, renderer, quality: q.get('q') || 'high', lights: [pl1, pl2], tuning,
+    feel: (s, p) => { shake = Math.max(shake, s); punch = Math.max(punch, p); },
+    onEvent: (name, info) => { events.push({ name, t: simTime - castT0, spell: info.spell }); } });
+  fx.attach(knight);
+  window.__mfx = fx;
+
+  /* ---------- hits: target reaction + floating numbers (hit confirmation timing) ---------- */
+  const _pv = new THREE.Vector3(), floaters = [];
+  function floatText(p, text, big) { const el = document.createElement('div'); el.className = 'dmg' + (big ? ' big' : ''); el.textContent = text; document.body.appendChild(el); floaters.push({ el, p: p.clone(), t: 0 }); }
+  function react(tg, dirX, dirZ, power, amount) {
+    if (tg.kind === 'dummy') { tg.axis.set(dirZ, 0, -dirX).normalize(); tg.om += 4.5 * power; tg.flash = 1; }
+    else tg.v.flash(0.12);
+    floatText(new THREE.Vector3(tg.pos.x, tg.height + 0.5, tg.pos.z), Math.round(amount * (0.9 + Math.random() * 0.2)), power > 1.2);
+  }
+  function areaHit(p, r, power, amount, filter) {
+    for (const tg of liveTargets()) {
+      const dx = tg.pos.x - p.x, dz = tg.pos.z - p.z, d = Math.hypot(dx, dz);
+      if (d > r + tg.radius || (filter && !filter(tg, d))) continue;
+      react(tg, d > 0.05 ? dx / d : 1, d > 0.05 ? dz / d : 0, power, amount);
+    }
+  }
+  function segHit(p0, p1, rad) {                                 // first target capsule the segment enters (same test as the game)
+    const dir = p1.clone().sub(p0), len = dir.length(); if (len < 1e-6) return null;
+    const ray = new THREE.Ray(p0, dir.divideScalar(len));
+    for (const tg of liveTargets()) {
+      const a0 = new THREE.Vector3(tg.pos.x, 0, tg.pos.z), a1 = a0.clone(); a1.y += tg.height;
+      const cp = new THREE.Vector3(), ca = new THREE.Vector3(), r = tg.radius + rad;
+      if (ray.distanceSqToSegment(a0, a1, cp, ca) <= r * r && cp.distanceTo(p0) <= len + 0.05) return { point: cp, tg };
+    }
+    return null;
+  }
+  const bodyOf = (tg) => new THREE.Vector3(tg.pos.x, tg.bodyY, tg.pos.z);
+
+  /* ---------- the nine spells, wired like the game (same animations, play rates, radii) ---------- */
+  const SP = [
+    { id: 'fireball', name: 'Ateş Topu', school: 'fire', loop: 1.1 },
+    { id: 'meteor', name: 'Meteor', school: 'fire', anim: 'meteor', rate: 1, ground: 2.8, loop: 2.8 },
+    { id: 'nova', name: 'Alev Halkası', school: 'fire', anim: 'mslam', rate: 1, radius: 4.5, loop: 2.4 },
+    { id: 'ice', name: 'Buz Mızrağı', school: 'frost', anim: 'cast', rate: 1.12, loop: 1.3 },
+    { id: 'bolt', name: 'Yıldırım', school: 'storm', anim: 'meteor', rate: 1.55, ground: 1.4, loop: 2.0 },
+    { id: 'pillar', name: 'Ateş Sütunu', school: 'fire', anim: 'mslam', rate: 1.1, ground: 1.3, loop: 3.2 },
+    { id: 'blink', name: 'Işınlanma', school: 'arcane', anim: 'mbuff', rate: 1.8, loop: 1.6 },
+    { id: 'mshield', name: 'Mana Kalkanı', school: 'ward', anim: 'mbuff', rate: 1, loop: 4.5 },
+    { id: 'storm', name: 'Ateş Fırtınası', school: 'fire', anim: 'meteor', rate: 0.85, ground: 4.2, loop: 5.2 },
+  ];
+  const BY = {}; SP.forEach((s, i) => { s.key = String(i + 1); BY[s.id] = s; });
+  let cur = SP[0], blinkAway = false, radiusOn = q.has('radius');
+  const shieldState = { left: 0, absorb: 0 };
+
+  function aimGround() { return tgtCenter.clone(); }
+  function faceTo(p) { yaw = Math.atan2(p.x - knight.root.position.x, p.z - knight.root.position.z); knight.root.rotation.y = yaw; }
+  function blinkTarget() {
+    const kp = knight.root.position, back = kp.distanceTo(home) > 0.5;
+    if (back) return home.clone();
+    const d = tgtCenter.clone().sub(kp).setY(0), L = Math.min(tuning.blink.range, Math.max(0, d.length() - 2.2));
+    return kp.clone().add(d.setLength(L));
+  }
+  let pendingBlink = null;
+  function cast(id) {
+    const s = BY[id]; if (!s) return;
+    selectSpell(s);
+    castT0 = simTime; events.length = 0; events.push({ name: 'press', t: 0, spell: id });
+    if (id === 'blink') { pendingBlink = blinkTarget(); faceTo(pendingBlink); }
+    else if (id !== 'mshield' && id !== 'nova') faceTo(tgtCenter);
+    if (id === 'fireball') { knight.action = null; knight.sinceAttack = 99; knight.play('cast'); }
+    else knight.play(s.anim, { rate: s.rate, tag: id });
+    if (s.ground) { fx.telegraph(id, aimGround(), s.ground); if (radiusOn) showRadius(aimGround(), id === 'bolt' ? 1.6 : s.ground); }
+    if (id === 'blink') fx.telegraph('blink', pendingBlink, 0.75);
+    if (id === 'nova' && radiusOn) showRadius(knight.root.position, s.radius);
+  }
+  function fireArgs(spell) {
+    const L = knight.staffLaunch(), tg = liveTargets()[0] || null;
+    const aim = tg ? bodyOf(tg) : tgtCenter.clone().setY(1.25);
+    return { from: L.pos.clone(), dir: aim.clone().sub(L.pos).normalize(), range: 16, step: (p0, p1) => segHit(p0, p1, 0.2),
+      home: homingOn && tg ? () => bodyOf(tg) : null,
+      onHit: (hit, dir) => react(hit.tg, dir.x, dir.z, 1, spell === 'ice' ? 150 : 110) };
+  }
+  knight.onEvent = (e) => {
+    if (e.type !== 'impact') return;
+    const id = e.skill || (e.def.spell === 'fireball' ? 'fireball' : null); if (!id) return;
+    const s = BY[id], p = aimGround();
+    switch (id) {
+      case 'fireball': case 'ice': fx.release(id, fireArgs(id)); break;
+      case 'meteor': fx.release(id, { point: p, radius: s.ground, onImpact: (i) => areaHit(i.point, i.radius, 1.8, 300) }); break;
+      case 'bolt': fx.release(id, { point: p, radius: 1.6, onImpact: (i) => areaHit(i.point, i.radius, 1.6, 260) }); break;
+      case 'pillar': fx.release(id, { point: p, radius: s.ground, onTick: (i) => areaHit(i.point, i.radius, 0.6, 70) }); break;
+      case 'storm': fx.release(id, { point: p, radius: s.ground, onImpact: (i) => areaHit(i.point, i.radius, i.final ? 1.8 : 1.2, i.final ? 240 : 160) }); break;
+      case 'nova': {
+        const hitSet = new Set();
+        fx.release(id, { center: knight.root.position.clone(), radius: s.radius,
+          onSweep: (r0, r1) => areaHit(knight.root.position, r1, 1.3, 140, (tg, d) => { if (hitSet.has(tg) || d - tg.radius > r1) return false; hitSet.add(tg); return true; }) });
+        break;
+      }
+      case 'blink': {
+        const from = knight.root.position.clone(), to = VW ? VW.clampMove(from, pendingBlink) : pendingBlink;
+        knight.root.position.copy(to);
+        fx.release(id, { from, to });
+        break;
+      }
+      case 'mshield':
+        shieldState.left = tuning.mshield.duration; shieldState.absorb = tuning.mshield.absorb;
+        fx.release(id, { follow: knight.root, state: () => ({ active: shieldState.left > 0 && shieldState.absorb > 0, frac: shieldState.absorb / tuning.mshield.absorb }) });
+        break;
+    }
+  };
+  function shieldHit() {
+    if (shieldState.absorb <= 0 || shieldState.left <= 0) return;
+    const src = liveTargets()[Math.floor(Math.random() * liveTargets().length)] || null, kp = knight.root.position;
+    const d = src ? new THREE.Vector3(src.pos.x - kp.x, 0, src.pos.z - kp.z).normalize() : null;
+    shieldState.absorb = Math.max(0, shieldState.absorb - tuning.mshield.absorb * 0.18);
+    fx.shieldHit(d ? d.x : undefined, d ? d.z : undefined);
+    floatText(new THREE.Vector3(kp.x, 2.7, kp.z), 'emildi', false);
+  }
+  // gameplay radius overlay (thin white circle) to check that the VFX edge matches the real hit area
+  const radRing = new THREE.Mesh(new THREE.RingGeometry(0.985, 1, 96), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+  radRing.rotation.x = -Math.PI / 2; radRing.renderOrder = 40; scene.add(radRing);
+  let radT = 0;
+  function showRadius(p, r) { radRing.position.set(p.x, 0.06, p.z); radRing.scale.setScalar(r); radT = 3.5; }
+
+  /* ---------- UI ---------- */
+  const spellsEl = $('spells');
+  SP.forEach((s) => {
+    const b = document.createElement('button'); b.dataset.id = s.id;
+    b.innerHTML = '<span class="k">' + s.key + '</span>' + s.name + '<span class="d" style="background:var(--' + s.school + ')"></span>';
+    b.onclick = () => cast(s.id); spellsEl.appendChild(b);
+  });
+  function selectSpell(s) { cur = s; spellsEl.querySelectorAll('button').forEach((b) => b.classList.toggle('cur', b.dataset.id === s.id)); buildTuning(); }
+  const mkBtns = (row, items, onPick, isOn) => { const el = $(row); el.innerHTML = ''; for (const [k, label] of items) { const b = document.createElement('button'); b.textContent = label; b.dataset.k = k; b.onclick = () => { onPick(k); refresh(); }; el.appendChild(b); } const refresh = () => el.querySelectorAll('button').forEach((b) => b.classList.toggle('on', isOn(b.dataset.k))); refresh(); return refresh; };
+  mkBtns('tgtRow', [['dummy', 'Kukla'], ['crowd', 'Kukla + yaratıklar'], ['none', 'Yok']], (k) => { targetMode = k; placeTargets(tgtCenter); }, (k) => k === targetMode);
+  const camRow = $('camRow'); for (const k in CAMS) { const b = document.createElement('button'); b.textContent = CAMS[k].label; b.dataset.cam = k; b.onclick = () => setCam(k); camRow.appendChild(b); }
+  mkBtns('qRow', [['low', 'Düşük'], ['medium', 'Orta'], ['high', 'Yüksek']], (k) => fx.setQuality(k), (k) => k === fx.quality);
+  mkBtns('worldRow', [['village', 'Köy (oyun zemini)'], ['arena', 'Düz arena']], (k) => { if (k !== world) { q.set('world', k); location.search = q.toString(); } }, (k) => k === world);
+  let timeScale = 1, paused = false, stepOnce = false, loopOn = false, loopT = 0, seq = null, homingOn = true, autoHit = false, autoT = 0;
+  const setSpeed = (v) => { timeScale = +v; $('speed').value = v; $('speedV').textContent = (+v).toFixed(2) + 'x'; };
+  $('speed').oninput = (e) => setSpeed(e.target.value);
+  document.querySelectorAll('[data-sp]').forEach((b) => (b.onclick = () => setSpeed(b.dataset.sp)));
+  $('pause').onclick = () => { paused = !paused; $('pause').classList.toggle('on', paused); };
+  $('step').onclick = () => { paused = true; $('pause').classList.add('on'); stepOnce = true; };
+  $('replay').onclick = () => cast(cur.id);
+  $('loop').onclick = () => { loopOn = !loopOn; loopT = 0; $('loop').classList.toggle('on', loopOn); };
+  $('all').onclick = () => { seq = { i: 0, t: 0 }; };
+  $('dist').oninput = (e) => { tgtDist = +e.target.value; $('distV').textContent = tgtDist.toFixed(1) + ' m'; placeTargets(); };
+  $('homing').onclick = () => { homingOn = !homingOn; $('homing').classList.toggle('on', homingOn); };
+  $('radius').onclick = () => { radiusOn = !radiusOn; $('radius').classList.toggle('on', radiusOn); };
+  $('radius').classList.toggle('on', radiusOn);
+  $('hit').onclick = shieldHit;
+  $('brk').onclick = () => { if (shieldState.absorb > 0) { shieldState.absorb = 0; } };
+  $('autohit').onclick = () => { autoHit = !autoHit; $('autohit').classList.toggle('on', autoHit); };
+
+  // tuning sliders (per selected spell + global), persisted in localStorage, exportable as JSON
+  function slider(parent, group, key, meta) {
+    const [mn, mx, st, label] = meta, L = document.createElement('label');
+    L.innerHTML = '<span class="n">' + label + '</span><input type="range" min="' + mn + '" max="' + mx + '" step="' + st + '"><span class="v"></span>';
+    const inp = L.querySelector('input'), val = L.querySelector('.v');
+    const show = () => { val.textContent = (+tuning[group][key]).toFixed(st < 0.1 ? 2 : st < 1 ? 1 : 0); };
+    inp.value = tuning[group][key]; show();
+    inp.oninput = () => { tuning[group][key] = +inp.value; show(); save(); };
+    parent.appendChild(L);
+  }
+  function save() { try { localStorage.setItem('mfx.tuning', JSON.stringify(tuning)); } catch (e) {} }
+  function buildTuning() {
+    $('tunName').textContent = cur.name;
+    const el = $('tun'); el.innerHTML = '';
+    const meta = MageFX.TUNING_META[cur.id] || {};
+    for (const k in meta) slider(el, cur.id, k, meta[k]);
+    const g = $('tunG'); g.innerHTML = '';
+    for (const k in MageFX.TUNING_META.global) slider(g, 'global', k, MageFX.TUNING_META.global[k]);
+  }
+  $('tunReset').onclick = () => { Object.assign(tuning[cur.id], JSON.parse(JSON.stringify(MageFX.TUNING_DEFAULT[cur.id]))); save(); buildTuning(); };
+  $('tunAll').onclick = () => { for (const k in MageFX.TUNING_DEFAULT) Object.assign(tuning[k], JSON.parse(JSON.stringify(MageFX.TUNING_DEFAULT[k]))); save(); buildTuning(); };
+  $('tunCopy').onclick = () => {
+    const txt = JSON.stringify(tuning, null, 2), out = $('out');
+    const fallback = () => { out.value = txt; out.style.display = 'block'; out.select(); };
+    if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => { $('tunCopy').textContent = 'Kopyalandı ✓'; setTimeout(() => ($('tunCopy').textContent = 'JSON kopyala'), 1200); }, fallback); else fallback();
+  };
+  $('out').onblur = () => ($('out').style.display = 'none');
+
+  /* ---------- input ---------- */
+  const keys = {};
+  addEventListener('keydown', (e) => {
+    if (e.target && e.target.tagName === 'TEXTAREA') return;
+    const k = e.key.toLowerCase(); keys[k] = true;
+    if (e.repeat) return;
+    if (k >= '1' && k <= '9') cast(SP[+k - 1].id);
+    else if (k === '0') seq = { i: 0, t: 0 };
+    else if (k === ' ') { e.preventDefault(); cast(cur.id); }
+    else if (k === 'l') $('loop').click();
+    else if (k === 'p') $('pause').click();
+    else if (k === '.') $('step').click();
+    else if (k === 'h') shieldHit();
+    else if (k === 'b') $('brk').click();
+  });
+  addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+  addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  canvas.addEventListener('auxclick', (e) => e.preventDefault());
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const r = canvas.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera); const p = new THREE.Vector3();
+    if (ray.ray.intersectPlane(plane, p)) placeTargets(p);
+  });
+
+  /* ---------- main loop ---------- */
+  const clock = new THREE.Clock();
+  let frames = 0, fpsT = 0, fps = 0, ms = 0, curSpeed = 0;
+  const prev = new THREE.Vector3(), dir = new THREE.Vector3(), angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+  let external = false;                                         // tools drive the clock (deterministic captures)
+  function tick() {
+    requestAnimationFrame(tick);
+    const rdt = Math.min(clock.getDelta(), 0.05);
+    if (external) return;
+    const dt = paused ? (stepOnce ? 1 / 60 : 0) : rdt * timeScale; stepOnce = false;
+    frame(rdt, dt, true);
+  }
+  function advance(sec) {                                       // run the simulation in fixed 1/60 s steps, render the last one
+    external = true;
+    const n = Math.max(1, Math.round(sec * 60));
+    for (let i = 0; i < n; i++) frame(1 / 60, 1 / 60, i === n - 1);
+  }
+  function frame(rdt, dt, doRender) {
+    const t0 = performance.now();
+    simTime += dt;
+    // hero movement (WASD, camera-independent like the game: W = north / up the screen)
+    dir.set((keys.d ? 1 : 0) - (keys.a ? 1 : 0), 0, (keys.s ? 1 : 0) - (keys.w ? 1 : 0));
+    const move = dir.lengthSq() > 0 && knight.canMove ? 1 : 0;
+    if (move) dir.normalize();
+    curSpeed += Math.max(-14 * dt, Math.min(9 * dt, move * Knight.RUN_SPEED - curSpeed));
+    prev.copy(knight.root.position);
+    if (curSpeed > 0.01 && move) { knight.root.position.addScaledVector(dir, curSpeed * dt); yaw += angDiff(Math.atan2(dir.x, dir.z), yaw) * (1 - Math.exp(-14 * dt)); }
+    knight.root.rotation.y = yaw;
+    knight.update(dt, { move: curSpeed > 0.05 ? 1 : 0, speed: curSpeed });
+    if (VW) VW.collide(knight.root.position);
+    // dummy spring + creatures idle
+    for (const tg of targets) { tg.om += (-70 * tg.th - 5.5 * tg.om) * dt; tg.th += tg.om * dt; tg.piv.quaternion.setFromAxisAngle(tg.axis, tg.th); tg.flash = Math.max(0, tg.flash - dt * 5); for (const m of tg.mats) m.emissive.setRGB(tg.flash * 0.5, tg.flash * 0.4, tg.flash * 0.25); }
+    for (const c of crowd) { if (c.v.anim && c.v.anim.setMode) c.v.anim.setMode(null); c.v.update(dt, 2); }
+    // shield simulation
+    if (shieldState.left > 0) { shieldState.left -= dt; if (autoHit && (autoT -= dt) <= 0) { autoT = 0.9; shieldHit(); } }
+    fx.update(dt);
+    // loop / sequence
+    if (loopOn && !paused) { loopT += dt; if (loopT >= cur.loop) { loopT = 0; cast(cur.id); } }
+    if (seq && !paused) { seq.t -= dt; if (seq.t <= 0) { if (seq.i >= SP.length) seq = null; else { const s = SP[seq.i++]; cast(s.id); seq.t = s.loop + 0.3; } } }
+    // camera follow + shake / punch (game feel)
+    const delta = knight.root.position.clone().sub(prev);
+    camera.position.sub(lastShake); camera.position.add(delta); controls.target.add(delta); controls.update();
+    shake *= Math.exp(-rdt * 13); punch *= Math.exp(-rdt * 9);
+    lastShake.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(shake * 0.8);
+    camera.position.add(lastShake);
+    const fov = 38 - punch * 2.2; if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+    sun.position.copy(knight.root.position).add(SUN_OFF); sun.target.position.copy(knight.root.position);
+    if (VW) VW.update(rdt, camera, knight.root.position, sun);
+    radT -= rdt; radRing.material.opacity = Math.max(0, Math.min(0.9, radT));
+    for (const F of floaters) { F.t += rdt; F.p.y += rdt * 0.9; }
+    if (!doRender) return;
+    renderer.render(scene, camera);
+    // floating numbers
+    for (let i = floaters.length - 1; i >= 0; i--) {
+      const F = floaters[i];
+      _pv.copy(F.p).project(camera); F.el.style.left = ((_pv.x * 0.5 + 0.5) * innerWidth) + 'px'; F.el.style.top = ((-_pv.y * 0.5 + 0.5) * innerHeight) + 'px'; F.el.style.opacity = Math.max(0, 1 - F.t / 0.9);
+      if (F.t > 0.9) { F.el.remove(); floaters.splice(i, 1); }
+    }
+    ms += (performance.now() - t0 - ms) * 0.1; frames++; fpsT += rdt;
+    if (fpsT > 0.5) { fps = Math.round(frames / fpsT); frames = 0; fpsT = 0; drawStats(); }
+    drawTimeline();
+  }
+  function drawStats() {
+    const s = fx.stats(), I = renderer.info.render;
+    $('stats').textContent =
+      'FPS ' + fps + '   kare ' + ms.toFixed(1) + ' ms\n' +
+      'Çizim çağrısı ' + I.calls + '   üçgen ' + (I.triangles / 1000).toFixed(0) + 'k\n' +
+      'Parçacık ' + s.particles + ' / ' + s.capacity + '   iz ' + s.trails + '\n' +
+      'Zemin efekti ' + s.decals + '   parça ' + s.shards + '   alev ' + s.flames + '\n' +
+      'Kalite ' + s.quality + '   kamera ' + camera.position.distanceTo(controls.target).toFixed(1) + ' m';
+  }
+  const tl = $('tl'), tg2 = tl.getContext('2d');
+  const EVC = { press: '#8aa8bc', cast: '#e3b540', release: '#ffffff', impact: '#ff8a2a' };
+  function drawTimeline() {
+    const W = tl.width, H = tl.height, span = Math.max(2, ...events.map((e) => e.t + 0.4));
+    tg2.clearRect(0, 0, W, H);
+    tg2.strokeStyle = 'rgba(160,200,230,.25)'; tg2.lineWidth = 1; tg2.font = '20px system-ui'; tg2.fillStyle = '#8aa8bc';
+    for (let s = 0; s <= span; s += 0.5) { const x = 12 + (W - 24) * s / span; tg2.beginPath(); tg2.moveTo(x, H - 30); tg2.lineTo(x, H - 22); tg2.stroke(); if (s % 1 === 0) tg2.fillText(s.toFixed(0) + 's', x - 8, H - 4); }
+    tg2.beginPath(); tg2.moveTo(12, H - 26); tg2.lineTo(W - 12, H - 26); tg2.stroke();
+    let lastX = -99, row = 0;
+    for (const e of events) {
+      const x = 12 + (W - 24) * e.t / span;
+      tg2.strokeStyle = tg2.fillStyle = EVC[e.name] || '#fff'; tg2.lineWidth = 3;
+      tg2.beginPath(); tg2.moveTo(x, 8); tg2.lineTo(x, H - 26); tg2.stroke();
+      row = x - lastX < 170 ? (row + 1) % 3 : 0; lastX = x;
+      tg2.fillText(({ press: 'tuş', cast: 'hazırlık', release: 'salınım', impact: 'isabet' })[e.name] + ' ' + e.t.toFixed(2), x + 5, 26 + row * 24);
+    }
+    const now = simTime - castT0;
+    if (now < span) { const x = 12 + (W - 24) * now / span; tg2.fillStyle = 'rgba(255,255,255,.5)'; tg2.fillRect(x - 1, 6, 2, H - 32); }
+  }
+
+  /* ---------- start ---------- */
+  placeTargets(); setCam(camName); selectSpell(SP[0]);
+  if (q.get('spell')) selectSpell(BY[q.get('spell')] || SP[0]);
+  $('loading').remove();
+  // dev / tool hooks
+  window.__mfxTest = { cast, setSpeed, setCam, pause: (v) => { paused = v; }, select: (id) => selectSpell(BY[id]), targets: () => liveTargets().length, sp: SP, tuning, fx, shieldHit,
+    target: () => tgtCenter.clone(), knight, placeTargets, advance, release: () => { external = false; } };
+  tick();
+  knight.whenReady(() => { setTimeout(() => { document.title = 'ready'; }, 300); });
+})();
+</script>
+</body>
+</html>

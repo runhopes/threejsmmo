@@ -1,0 +1,7 @@
+/* World map window (ui/worldmap.js): full-screen warm dim (Atherion map_controller "Dim") + the drawn sheet, centred. */
+.hud-wm { position: fixed; inset: 0; pointer-events: auto; background: rgba(14, 11, 7, .62); touch-action: none; }
+.hud-wm .wm-sheet { position: absolute; }
+.hud-wm .wm-sheet.grab { cursor: grab; }
+.hud-wm .wm-sheet.grabbing { cursor: grabbing; }
+.hud-wm canvas { position: absolute; left: 0; top: 0; display: block; pointer-events: none; }
+.hud-wm .wm-x { position: absolute; cursor: pointer; }

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>HUD bench - left column (quests + party)</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="../hud.css">
+</head>
+<body>
+<script src="paint.js"></script>
+<script>
+// ?all=1: also load the other parts index.html loads, so the whole screen reads like the game (layout C: top-left = party + quests only)
+if (/[?&]all=1/.test(location.search)) document.write(['core.css', 'inventory.css'].map((f) => '<link rel="stylesheet" href="' + f + '">').join('') +
+  ['bottombar.js', 'target.js', 'inventory.js', 'minimap.js', 'compass.js', 'effects.js'].map((f) => '<script src="' + f + '"><\/script>').join(''));
+</script>
+<script src="quests.js"></script>
+<script src="party.js"></script>
+<script src="../hud.js"></script>
+<script src="bench.js"></script>
+<script>
+/* Extra BENCH-ONLY sample states for the left column (never shipped: index.html feeds real state).
+ *   ?quests=1 / ?party=1   bench.js samples
+ *   ?demo=full             five quests (4 rows + "+1 görev daha") with every card shape, party of four
+ *   ?demo=anim             timeline: accept -> progress -> objective done -> ready -> turn in; party join / leave
+ *   ?demo=party8           a long party (8) to check the column push
+ */
+(function () {
+  const q = new URLSearchParams(location.search), hud = window.__hud, demo = q.get('demo');
+  if (!hud || !demo) return;
+  const Q = {
+    a: { id: 'qa', title: 'Kardeşimin Nişanı', desc: 'Valen istiyor: çiçekleri Toren\'in mezarına bırak.', objectives: [{ text: 'Mezara çiçek bırak', cur: 0, max: 1 }], kind: 'useitem', tracked: true },
+    b: { id: 'qb', title: 'Yaban Avı', desc: 'Borak istiyor: yaşlı domuzdan 4 yağ tulumu, bozkır kurdundan 4 azık eti, pazar yerinden de iki tuzlu peynir kalıbı getir.',
+      objectives: [{ text: 'Yağ Tulumu · Yaşlı Yabandomuz', cur: 4, max: 4 }, { text: 'Azık Eti · Bozkır Kurdu', cur: 0, max: 4 }] },
+    c: { id: 'qc', title: 'Zırhı Sına', desc: 'Borak bekliyor: zırh dayandı, sırtını göster.', objectives: [{ text: 'Yosun Filizi', cur: 15, max: 15 }], done: true },
+    d: { id: 'qd', title: 'Zıttıyla Bağla', desc: 'Eryn istiyor: korkuluk cinlerinden 3 koyu öz çıkar.', objectives: [{ text: 'Korkuluk Cini', cur: 0, max: 3 }] },
+    e: { id: 'qe', title: 'Sessiz Merhem', objectives: [{ text: 'Borak ile konuş: “çayırda kök buldum” de.', cur: 0, max: 1 }] },
+  };
+  const party = [
+    { id: 'p1', name: 'Runhopess', level: 7, hp: 3100, maxHp: 3600 },
+    { id: 'p2', name: 'Giraffno', level: 23, hp: 1500, maxHp: 3000 },
+    { id: 'p3', name: 'Eryndel', level: 19, hp: 520, maxHp: 2900 },
+    { id: 'p4', name: 'Kaelen', level: 12, hp: 2000, maxHp: 2000, offline: true },
+    { id: 'p5', name: 'Borakhan', level: 44, hp: 0, maxHp: 5200, dead: true },
+    { id: 'p6', name: 'Serrayavuzhanoğlu Taşkaleli', level: 28, hp: 2600, maxHp: 4000 },
+    { id: 'p7', name: 'Aysel', level: 31, hp: 3900, maxHp: 3900 },
+    { id: 'p8', name: 'Valen', level: 55, hp: 6100, maxHp: 6400 },
+  ];
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  if (demo === 'full') {
+    hud.setQuests([Q.d, Q.c, Q.b, Q.a, Q.e]);
+    hud.setParty(party.slice(0, 5));
+  } else if (demo === 'party8') {
+    hud.setQuests([Q.b, Q.a]);
+    hud.setParty(party);
+  } else if (demo === 'anim') {
+    let list = [clone(Q.b), clone(Q.d)];
+    hud.setQuests(list);
+    const at = (t, fn) => setTimeout(fn, t);
+    at(1500, () => { list = [clone(Q.a)].concat(list); hud.setQuests(list); hud.setParty(party.slice(0, 2)); });                    // accept + party opens
+    at(3000, () => { list = clone(list); list.find((x) => x.id === 'qb').objectives[1].cur = 3; hud.setQuests(list); hud.setParty(party.slice(0, 3)); });     // progress + join
+    at(4000, () => { list = clone(list); list.find((x) => x.id === 'qb').objectives[1].cur = 4; hud.setQuests(list); });                                      // objective done flash
+    at(5000, () => { list = clone(list); list.find((x) => x.id === 'qb').done = true; hud.setQuests(list); });                                               // HAZIR
+    at(6500, () => { list = list.filter((x) => x.id !== 'qb'); hud.setQuests(list); hud.setParty(party.slice(0, 2)); });              // turn in + leave
+  }
+})();
+</script>
+</body>
+</html>

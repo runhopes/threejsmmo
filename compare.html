@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hero Model Compare</title>
+<style>
+  :root { --bg:#16252f; --txt:#dcecf7; --dim:#8fb0c6; --acc:#e3b540; --line:rgba(160,200,230,.22); }
+  html,body { margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--txt); font:13px/1.4 system-ui,Segoe UI,sans-serif; }
+  canvas { display:block; width:100%; height:100%; }
+  .lbl { position:fixed; padding:3px 8px; background:#000a; border-radius:5px; font-weight:600; font-size:12px; pointer-events:none; z-index:3; }
+  #ui { position:fixed; left:50%; bottom:10px; transform:translateX(-50%); display:flex; gap:6px; flex-wrap:wrap; justify-content:center; z-index:4; }
+  #ui button { all:unset; cursor:pointer; padding:6px 11px; border-radius:7px; border:1px solid var(--line); background:rgba(12,22,30,.8); font-weight:600; }
+  #ui button.on { background:var(--acc); color:#1b1b1b; }
+  #err { position:fixed; left:8px; top:8px; color:#ff6b6b; font:12px monospace; white-space:pre-wrap; z-index:9; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="err"></div>
+<div id="ui"></div>
+<script>
+  window.addEventListener('error', function (e) { document.getElementById('err').textContent += 'ERR: ' + e.message + ' (' + (e.filename || '').split('/').pop() + ':' + e.lineno + ')\n'; document.title = 'ERR'; });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="textures.js"></script>
+<script src="locomotion.js"></script>
+<script src="heromodel.js"></script>
+<script src="knight.js"></script>
+<script>
+/* Old vs new hero model, same rig and animation.
+ *   compare.html?cls=warrior&anim=idle&t=0.5            rows: legacy / v2, columns: front, side, back, 3/4, gameplay camera
+ *   &views=front,q34  &rows=new  &live=1 (animate with the real update loop: buttons pick idle / walk / run / attack)
+ *   &sim=run&t=0.4   (run the real update() loop to time t instead of the debug pose)   &zoom=0.6 (closer)   &ty=1.2 */
+(function () {
+  const q = new URLSearchParams(location.search);
+  const cls = q.get('cls') || 'warrior';
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const scene = new THREE.Scene(), BG = 0x16252f;
+  scene.background = new THREE.Color(BG);
+  // same lighting rig as the game page
+  (function makeEnv() {
+    const s = new THREE.Scene(), geo = new THREE.SphereGeometry(10, 24, 16), p = geo.attributes.position, col = [];
+    const top = new THREE.Color(0xe4efff), mid = new THREE.Color(0x7d96ad), bot = new THREE.Color(0x182733);
+    for (let i = 0; i < p.count; i++) { const y = p.getY(i) / 10; const c = y > 0 ? mid.clone().lerp(top, Math.pow(y, 0.7)) : mid.clone().lerp(bot, Math.min(1, -y * 1.6)); col.push(c.r, c.g, c.b); }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    s.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+    const soft = (w, h, pos, k, color) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(...pos); m.lookAt(0, 0, 0); s.add(m); };
+    soft(7, 3, [-6, 6, 5], 5, 0xfff2e0); soft(4, 7, [7, 3, -5], 3, 0x9cc8ff); soft(5, 2, [0, 8, -3], 2, 0xffffff);
+    const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(s, 0.02).texture; pm.dispose();
+  })();
+  scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x2a3a46, 0.45));
+  const sun = new THREE.DirectionalLight(0xfff1dd, 1.0);
+  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4, near: 1, far: 40 }); sun.shadow.bias = -0.0006;
+  sun.position.set(-6, 12, 7); scene.add(sun, sun.target);
+  const rim = new THREE.DirectionalLight(0x7fb2ff, 0.55); rim.position.set(5, 5, -7); scene.add(rim);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshStandardMaterial({ color: 0x20384a, roughness: 1 }));
+  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+  const grid = new THREE.GridHelper(30, 30, 0x3b5d75, 0x2c4659); grid.position.y = 0.01; grid.material.transparent = true; grid.material.opacity = 0.45; scene.add(grid);
+
+  const rowsWanted = (q.get('rows') || 'old,new').split(',');
+  const heroes = rowsWanted.map((r) => {
+    const k = new Knight({ cls, model: r === 'old' ? 'legacy' : undefined });
+    k.onEvent = () => {};
+    scene.add(k.root); scene.add(k.trail.mesh); scene.add(k.slash.group);
+    return { k, label: r === 'old' ? 'LEGACY' : 'HEROMODEL ' + k.model.toUpperCase() };
+  });
+  window.__heroes = heroes.map((h) => h.k);
+  if (q.has('stats')) for (const h of heroes) {           // per-mesh triangle budget (console)
+    const rows = [];
+    h.k.root.traverse((o) => { if (o.isMesh && o.geometry) { const g = o.geometry, n = (g.index ? g.index.count : g.attributes.position.count) / 3; const m = Array.isArray(o.material) ? o.material.map((x) => x.color.getHexString()).join('/') : o.material.color.getHexString(); rows.push([Math.round(n), (o.isSkinnedMesh ? 'S ' : 'R ') + (o.parent && o.parent.name || '') + ' #' + m]); } });
+    rows.sort((a, b) => b[0] - a[0]);
+    console.log(h.label + ' total ' + Math.round(h.k.triangles) + '\n' + rows.map((r) => r[0] + '  ' + r[1]).join('\n'));
+  }
+  const zoom = parseFloat(q.get('zoom') || '1'), ty = parseFloat(q.get('ty') || '1.15');
+  const VIEWS = {
+    front: { label: 'FRONT', fov: 24, dir: [0, 0.06, 1], dist: 6.4 },
+    side: { label: 'SIDE (left)', fov: 24, dir: [1, 0.06, 0], dist: 6.4 },
+    back: { label: 'BACK', fov: 24, dir: [0, 0.1, -1], dist: 6.4 },
+    q34: { label: '3/4', fov: 24, dir: [0.75, 0.22, 0.85], dist: 6.4 },
+    game: { label: 'GAME CAMERA (true size)', fov: 2 * Math.atan(Math.tan(19 * Math.PI / 180) / 2) * 180 / Math.PI, pos: [0, 6.8, 8.6], tgt: [0, 1.3, 0] },
+    face: { label: 'FACE', fov: 14, dir: [0.35, 0.05, 1], dist: 2.4, ty: 2.1 },
+  };
+  const viewNames = (q.get('views') || 'front,side,back,q34,game').split(',').filter((v) => VIEWS[v]);
+  const cams = viewNames.map((n) => {
+    const v = VIEWS[n], c = new THREE.PerspectiveCamera(v.fov, 1, 0.05, 100);
+    if (v.pos) { c.position.set(...v.pos); c.lookAt(...v.tgt); }
+    else { const d = new THREE.Vector3(...v.dir).normalize().multiplyScalar(v.dist * zoom); const t = v.ty || ty; c.position.set(d.x, d.y + t, d.z); c.lookAt(0, t, 0); }
+    return { n, v, c };
+  });
+  const labels = [];
+  const lbl = (txt) => { const el = document.createElement('div'); el.className = 'lbl'; el.textContent = txt; document.body.appendChild(el); labels.push(el); return el; };
+  const cells = [];
+  heroes.forEach((h, r) => cams.forEach((cm, c) => cells.push({ h, r, c, cm, el: lbl((c === 0 ? h.label + ' · ' : '') + cm.v.label + (c === 0 ? '  · ' + Math.round(h.k.triangles).toLocaleString() + ' tris' : '')) })));
+
+  const anim = q.get('anim') || 'idle', t = parseFloat(q.get('t') || '0.5');
+  let live = q.has('live'), mode = anim;
+  function pose() {
+    for (const h of heroes) {
+      if (q.get('sim')) {
+        const name = q.get('sim'), input = { move: name === 'run' || name === 'walk' ? 1 : 0, speed: name === 'walk' ? Knight.WALK_SPEED : undefined };
+        if (window.KNIGHT_DEFS[name]) h.k.play(name);
+        const dt = 1 / 120;
+        for (let s = 0; s < Math.round(t / dt); s++) { h.k.update(dt, input); h.k.root.position.set(0, 0, 0); }
+      } else if (q.has('bind')) {                         // bind pose: every joint at its build transform (geometry check)
+        for (const k in h.k.J) { const o = h.k.J[k], b = h.k.base[k]; o.rotation.set(b.rx, b.ry, b.rz); o.position.set(b.px, b.py, b.pz); }
+      } else h.k.debugPose(anim, t);
+      h.k.root.updateMatrixWorld(true);
+    }
+  }
+  function draw() {
+    const w = window.innerWidth, hgt = window.innerHeight, nr = heroes.length, nc = cams.length, cw = w / nc, ch = hgt / nr;
+    renderer.setSize(w, hgt, false);
+    renderer.setScissorTest(true);
+    for (const cell of cells) {
+      heroes.forEach((h) => { h.k.root.visible = h === cell.h; });
+      const x = cell.c * cw, yTop = cell.r * ch;
+      renderer.setViewport(x, hgt - yTop - ch, cw, ch); renderer.setScissor(x, hgt - yTop - ch, cw, ch);
+      cell.cm.c.aspect = cw / ch; cell.cm.c.updateProjectionMatrix();
+      renderer.render(scene, cell.cm.c);
+      cell.el.style.left = (x + 6) + 'px'; cell.el.style.top = (yTop + 6) + 'px';
+    }
+    heroes.forEach((h) => { h.k.root.visible = true; });
+  }
+  // live mode: buttons drive both heroes through the real controller
+  const ui = document.getElementById('ui');
+  if (live) {
+    for (const m of ['idle', 'walk', 'run', 'attack', 'special', 'hit']) {
+      const b = document.createElement('button'); b.textContent = m; b.onclick = () => {
+        mode = m; [...ui.children].forEach((x) => x.classList.toggle('on', x === b));
+        for (const h of heroes) { if (m === 'attack') h.k.attack(); else if (m === 'special' || m === 'hit') h.k.play(m); }
+      };
+      ui.appendChild(b);
+    }
+  }
+  let last = performance.now(), n = 0;
+  heroes[heroes.length - 1].k.whenReady(() => heroes[0].k.whenReady(() => {
+    if (!live) pose();
+    (function loop() {
+      const now = performance.now(), dt = Math.min(0.05, (now - last) / 1000); last = now;
+      if (live) for (const h of heroes) {
+        const input = { move: mode === 'walk' || mode === 'run' ? 1 : 0, speed: mode === 'walk' ? Knight.WALK_SPEED : undefined };
+        h.k.update(dt, input); h.k.root.position.set(0, 0, 0);
+        if (mode === 'attack' && !h.k.busy) h.k.attack();
+      }
+      draw();
+      if (++n === 4) document.title = 'ready';
+      requestAnimationFrame(loop);
+    })();
+  }));
+})();
+</script>
+</body>
+</html>

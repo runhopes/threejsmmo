@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>HUD bench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="../hud.css">
+<link rel="stylesheet" href="worldmap.css">
+</head>
+<body>
+<script src="paint.js"></script>
+<script src="worldmap.js"></script>
+<script src="../hud.js"></script>
+<script src="bench.js"></script>
+<script>
+/* bench-worldmap extras (SAMPLE data only, never in the game):
+ *   ?noimg=1      no world image (vector backdrop fallback, e.g. ?world=arena)
+ *   ?more=1       extra marker kinds: quest NPC, party member, friendly + neutral creatures, more NPCs
+ *   ?zoom=z       zoom after opening (optional ?cx=&cz= world centre)
+ *   ?cursor=x,y   fake pointer at sheet-local design px (coords line + hover label)
+ */
+(function () {
+  const q = new URLSearchParams(location.search), H = window.__hud, up = H.update;
+  addEventListener('keydown', (e) => H.onKeyDown(e));         // as index.html: M toggles, Esc closes the top window
+  H.update = function (st) {
+    if (st.map) {
+      st.map = Object.assign({}, st.map);
+      if (q.get('noimg') === '1') delete st.map.image;
+      if (q.get('more') === '1') st.map.markers = st.map.markers.concat([
+        { id: 'qn', x: -12, z: -48, kind: 'quest', label: 'Muhtar Veli' },
+        { id: 'n3', x: -52, z: -20, kind: 'npc', label: 'Eğitmen' }, { id: 'n4', x: 58, z: -6, kind: 'npc', label: 'Han' },
+        { id: 'pm', x: 10, z: 92, kind: 'party', label: 'Kaan' },
+        { id: 'c1', x: -17, z: 105, kind: 'neutral', label: 'Tarla Sıçanı (1)' }, { id: 'c2', x: -12, z: 101, kind: 'neutral', label: 'Tarla Sıçanı (2)' },
+        { id: 'c3', x: 83, z: 105, kind: 'hostile', label: 'Goblin (6)' }, { id: 'f1', x: 4, z: 70, kind: 'friendly', label: 'Muhafız' }]);
+    }
+    return up.call(H, st);
+  };
+  setTimeout(() => {
+    if (q.get('zoom')) H.mapWin.zoomTo(+q.get('zoom'), q.get('cx') !== null ? +q.get('cx') : undefined, q.get('cz') !== null ? +q.get('cz') : undefined);
+    if (q.get('cursor')) {
+      const [x, y] = q.get('cursor').split(',').map(Number), sh = document.querySelector('.hud-wm .wm-sheet'), r = sh.getBoundingClientRect();
+      sh.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + x * H.s, clientY: r.top + y * H.s, bubbles: true }));
+    }
+  }, 700);
+})();
+</script>
+</body>
+</html>

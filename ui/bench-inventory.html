@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>HUD bench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="../hud.css">
+<link rel="stylesheet" href="inventory.css">
+</head>
+<body>
+<script src="paint.js"></script>
+<script src="inventory.js"></script>
+<script src="../hud.js"></script>
+<script src="bench.js"></script>
+<script>addEventListener('keydown', (e) => { if (window.__hud && window.__hud.onKeyDown(e)) e.preventDefault(); });   // keys like index.html: I toggles, Esc closes</script>
+</body>
+</html>

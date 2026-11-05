@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>HUD bench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="../hud.css">
+<link rel="stylesheet" href="core.css">
+<link rel="stylesheet" href="death.css">
+</head>
+<body>
+<script src="paint.js"></script>
+<script src="bottombar.js"></script>
+<script src="target.js"></script>
+<script src="death.js"></script>
+<script src="feedback.js"></script>
+<script src="nameplates.js"></script>
+<script src="../hud.js"></script>
+<script src="bench.js"></script>
+<script>
+/* Feedback + name plate bench (SAMPLE data only). bench project(): screen x = 960 + 160·x, y = 675 − 135·y (1920×1080).
+ * ?fb=plates|numbers|error|level|veil|all · ?freeze=<s after load> stops the HUD clock (still frames) · ?low=1 low HP (veil pulse) */
+(function () {
+  const q = new URLSearchParams(location.search), hud = window.__hud, mode = q.get('fb') || 'all';
+  const W = (sx, sy, x0) => ({ x: (sx - 960) / 160, y: (675 - sy) / 135, z: 0 });
+  const at = (sx, sy) => W(sx, sy);
+  // name plates: anchor = world point above the head
+  const plates = [
+    Object.assign({ id: 'self', kind: 'player', self: true, name: 'Savaşçı', level: 4, clan: 'Demir Yemin' }, at(958, 392)),
+    Object.assign({ id: 'dummy', kind: 'mob', name: 'Eğitim Kuklası', level: 1, hp: 18978, maxHp: 20000 }, at(1200, 158)),
+    Object.assign({ id: 'w1', kind: 'mob', name: 'Bozkır Kurdu', level: 3, hp: 2100, maxHp: 5200, selected: true }, at(1480, 430)),
+    Object.assign({ id: 'w2', kind: 'mob', name: 'Bozkır Kurdu', level: 7, hp: 5200, maxHp: 5200, aggro: true }, at(560, 330)),
+    Object.assign({ id: 'e1', kind: 'mob', name: 'Mezar Bekçisi', level: 6, rank: 'elite', hp: 8914, maxHp: 8914 }, at(700, 720)),
+    Object.assign({ id: 'b1', kind: 'mob', name: 'Sırtık Reisi Grumbak', level: 10, rank: 'boss', hp: 412000, maxHp: 980000 }, at(1420, 760)),
+    Object.assign({ id: 'g1', kind: 'mob', name: 'Kör Fare', level: 1, hp: 300, maxHp: 300 }, at(300, 820)),
+    Object.assign({ id: 'p2', kind: 'player', self: false, name: 'Kaan', level: 24, hp: 2900, maxHp: 3600, party: true, clan: 'Kuş Yuvası', clanColor: '#3A9E6E' }, at(1700, 600)),
+    Object.assign({ id: 'n1', kind: 'npc', name: 'Demirci Borak', role: 'Demirci' }, at(260, 330)),
+  ];
+  let t0 = performance.now();
+  if (mode === 'plates' || mode === 'all') {
+    const orig = hud.update.bind(hud);
+    hud.update = (st) => {
+      const t = (performance.now() - t0) / 1000;
+      const w1 = plates[2]; w1.hp = Math.max(600, 2100 - Math.floor(t / 0.8) * 260);
+      orig(Object.assign({}, st, { plates }));
+    };
+  }
+  const dummy = W(1200, 300), hero = W(958, 480);
+  const spawn = (ms, fn) => setTimeout(fn, ms);
+  if (mode === 'numbers' || mode === 'all') {
+    let k = 0;
+    const seq = [['412', 'dmg'], ['1.284', 'crit'], ['388', 'dmg'], ['42', 'poison'], ['946', 'ice'], ['407', 'dmg'], ['3.829', 'crit']];
+    for (let i = 0; i < seq.length; i++) spawn(1300 + i * 260, () => hud.combatText(dummy, seq[i][0], seq[i][1]));
+    spawn(1500, () => hud.combatText(hero, '-408', 'hurt'));
+    spawn(1700, () => hud.combatText(W(1200, 250), '+220 TP', 'buff'));
+  }
+  if (mode === 'error' || mode === 'all') spawn(1300, () => hud.error('Yetersiz mana'));
+  if (mode === 'level') spawn(1300, () => hud.levelUp(5));
+  if (mode === 'veil' || mode === 'all') spawn(1300, () => { hud.combatText(hero, '-' + (q.get('dmg') || '900'), 'hurt'); hud.hurt(); });
+  const fz = +q.get('freeze');
+  if (fz) { const tick = hud.tick.bind(hud); let frozen = false; setTimeout(() => { frozen = true; }, fz * 1000); hud.tick = (dt) => { if (!frozen) tick(dt); }; }
+})();
+</script>
+</body>
+</html>

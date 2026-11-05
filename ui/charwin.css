@@ -1,0 +1,7 @@
+/* TDS - character window (ui/charwin.js). All drawing is canvas; this only places the elements. */
+#hud-root .cw-root { position: absolute; left: 0; top: 0; pointer-events: none; user-select: none; -webkit-user-select: none; will-change: transform; }
+/* hud.windows hides a closed window at once; the drawer slides out first (StatController, 0.22 s), so keep it drawn meanwhile */
+#hud-root .cw-root.cw-closing[hidden] { display: block !important; }
+#hud-root .cw-root canvas { position: absolute; left: 0; top: 0; display: block; pointer-events: none; }
+#hud-root .cw-root .cw-hit { position: absolute; pointer-events: auto; }
+#hud-root .cw-root.cw-closing .cw-hit { pointer-events: none; }

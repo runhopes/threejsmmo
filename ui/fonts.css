@@ -1,0 +1,9 @@
+/* Atherion UI fonts (OFL, copied from the Atherion project: fonts/OFL-*.txt). Local files: the canvas HUD must not depend on the network. */
+@font-face { font-family: 'Cinzel'; src: url('../fonts/Cinzel-Variable.ttf') format('truetype'); font-weight: 400 900; font-display: block; }
+@font-face { font-family: 'Alegreya'; src: url('../fonts/Alegreya-Variable.ttf') format('truetype'); font-weight: 400 900; font-display: block; }
+@font-face { font-family: 'Alegreya Sans'; src: url('../fonts/AlegreyaSans-Regular.ttf') format('truetype'); font-weight: 400; font-display: block; }
+@font-face { font-family: 'Alegreya Sans'; src: url('../fonts/AlegreyaSans-Medium.ttf') format('truetype'); font-weight: 500; font-display: block; }
+@font-face { font-family: 'Alegreya Sans'; src: url('../fonts/AlegreyaSans-Bold.ttf') format('truetype'); font-weight: 700; font-display: block; }
+@font-face { font-family: 'Alegreya Sans'; src: url('../fonts/AlegreyaSans-ExtraBold.ttf') format('truetype'); font-weight: 800; font-display: block; }
+@font-face { font-family: 'Alegreya Sans'; src: url('../fonts/AlegreyaSans-Italic.ttf') format('truetype'); font-weight: 400; font-style: italic; font-display: block; }
+@font-face { font-family: 'Alegreya Sans'; src: url('../fonts/AlegreyaSans-MediumItalic.ttf') format('truetype'); font-weight: 500; font-style: italic; font-display: block; }

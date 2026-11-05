@@ -1,0 +1,4 @@
+/* TDS HUD — death screen (ui/death.js). Above every HUD part (they fade with the world), below the windows (z 10+) and tooltips (30). */
+.hd-root { position: fixed; inset: 0; z-index: 7; pointer-events: none; }
+.hd-perde { position: absolute; inset: 0; }
+.hd-cv { position: absolute; left: 0; top: 0; display: block; }

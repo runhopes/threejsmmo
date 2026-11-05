@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>HUD bench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="../hud.css">
+<link rel="stylesheet" href="core.css">
+<link rel="stylesheet" href="chat.css">
+<link rel="stylesheet" href="menuwin.css">
+<link rel="stylesheet" href="death.css">
+<style>.hud-dead { display: none !important; }   /* the old feedback text; the integrator replaces it with HUDDeath */</style>
+</head>
+<body>
+<script src="paint.js"></script>
+<script src="bottombar.js"></script>
+<script src="target.js"></script>
+<script src="chat.js"></script>
+<script src="minimap.js"></script>
+<script src="menuwin.js"></script>
+<script src="death.js"></script>
+<script src="../hud.js"></script>
+<script src="bench.js"></script>
+<script>
+/* bench-menu: ?open=menu (bench.js) · ?keys=full (index.html's shortcut list) · ?restart=1 (hud.opts.onRestart present) · ?dead=1 · ?revive=1 (onRevive hook)
+ * keys like index.html: Esc / window hotkeys go through hud.onKeyDown; X dies, R revives (bench override of state.player.dead). */
+(function () {
+  const hud = window.__hud, q = new URLSearchParams(location.search);
+  if (q.get('keys') === 'full') hud.opts.keys = [['W A S D', 'Hareket'], ['Sağ tık', 'Tıklanan yere yürü'], ['Sol tık', 'Hedefe tıkla: koş ve saldır (tekrar tıkla / basılı tut) · zemine tıkla: yürü'], ['1 – 8', 'Yetenekler (Q = 1)'],
+    ['C', 'Yürü / koş'], ['Orta tuş', 'Kamerayı döndür (sürükle)'], ['Tekerlek', 'Yakınlaştır / uzaklaştır'], ['P · K · M', 'Karakter · Yetenekler · Harita'],
+    ['Esc', 'Pencereyi kapat · hedefi bırak · menü'], ['E · X · R', 'Geliştirici: darbe al · öl · diril']];
+  if (q.get('restart') === '1') hud.opts.onRestart = () => console.log('bench: onRestart');
+  let force = null;
+  if (q.get('revive') === '1') hud.opts.onRevive = () => { setTimeout(() => { force = false; }, 150); };
+  const death = HUDDeath(hud);
+  hud.parts.push(death);                                        // tick → frame(dt), applyScale → resize(s)
+  const up = hud.update;
+  hud.update = function (st) {
+    if (force !== null && st.player) { st.player.dead = force; if (force) st.player.hp = 0; }
+    up.call(hud, st);
+    death.set(!!(st.player && st.player.dead));
+  };
+  addEventListener('keydown', (e) => {
+    if (hud.onKeyDown(e)) { e.preventDefault(); return; }
+    if (e.key === 'x') force = true;
+    if (e.key === 'r') force = false;
+  });
+})();
+</script>
+</body>
+</html>

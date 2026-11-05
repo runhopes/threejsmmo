@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>HUD bench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="../hud.css">
+<link rel="stylesheet" href="charwin.css">
+<link rel="stylesheet" href="skillswin.css">
+</head>
+<body>
+<script src="paint.js"></script>
+<script src="charwin.js"></script>
+<script src="skillswin.js"></script>
+<script src="../hud.js"></script>
+<script src="bench.js"></script>
+<script>
+/* bench extras for the two windows (sample data only):
+ *   ?both=1            open the character and the skills window together
+ *   ?cwhover=x,y       move the mouse to sheet-local (x, y) on the character sheet (e.g. 160,200 = first ledger row -> künye card)
+ *   ?swsel=n           select node n in the skills window (0 = basic attack, 1..8 = skills)   ?swhover=n  hover it
+ *   ?cls=archer|mage   bench class (cover dye + names)
+ */
+addEventListener('keydown', (e) => { if (window.__hud && window.__hud.onKeyDown(e)) e.preventDefault(); });
+(function () {
+  const q = new URLSearchParams(location.search), hud = window.__hud;
+  const cls = q.get('cls');
+  if (cls === 'archer') hud.setPlayerInfo({ name: 'Okçu', title: 'Avcı', emblemHTML: '' });
+  if (cls === 'mage') hud.setPlayerInfo({ name: 'Büyücü', title: 'Ateş Büyücüsü', emblemHTML: '' });
+  setTimeout(() => {
+    if (q.get('both') === '1') { hud.windows.show('char'); hud.windows.show('skills'); }
+  }, 400);
+  const fire = (el, type, x, y) => el.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0 }));
+  setTimeout(() => {
+    const hv = q.get('cwhover');
+    if (hv) {
+      const el = document.querySelector('.cw-hit'), b = el.getBoundingClientRect(), [x, y] = hv.split(',').map(Number);
+      fire(el, 'mousemove', b.left + x * hud.s, b.top + y * hud.s);
+    }
+    const sw = hud.skillsWin;
+    if (sw && q.get('swsel') !== null) sw.select(+q.get('swsel'));
+    
+  }, 900);
+})();
+</script>
+</body>
+</html>

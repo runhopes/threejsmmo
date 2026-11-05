@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Melee Animation Preview</title>
+<style>
+  :root { --bg:#16252f; --panel:rgba(12,22,30,.82); --line:rgba(160,200,230,.22); --txt:#dcecf7; --dim:#8fb0c6; --acc:#e3b540;
+    --antic:#6f7f8c; --accel:#e3b540; --active:#ff5a4e; --follow:#4ea8ff; --recov:#3d5566; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--txt); font:12px/1.45 system-ui,Segoe UI,Roboto,sans-serif; }
+  canvas#c { display:block; width:100%; height:100%; }
+  .panel { position:fixed; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; backdrop-filter:blur(6px); }
+  #ctl { top:10px; left:10px; width:262px; max-height:calc(100% - 120px); overflow:auto; }
+  #ctl h3 { margin:8px 0 4px; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); font-weight:700; }
+  #ctl h3:first-child { margin-top:0; }
+  .row { display:flex; flex-wrap:wrap; gap:4px; }
+  button { all:unset; cursor:pointer; padding:5px 9px; border-radius:6px; border:1px solid var(--line); background:rgba(255,255,255,.04); color:var(--txt); font-weight:600; }
+  button:hover { background:rgba(255,255,255,.12); }
+  button.on { background:var(--acc); color:#1b1b1b; border-color:var(--acc); }
+  #info { top:10px; right:10px; width:300px; font:12px/1.5 ui-monospace,Consolas,monospace; white-space:pre; }
+  #info b { color:var(--acc); }
+  #tl { left:10px; right:10px; bottom:10px; height:96px; padding:8px 10px; }
+  #tl canvas { width:100%; height:62px; display:block; }
+  #legend { display:flex; gap:12px; margin-top:4px; color:var(--dim); font-size:11px; flex-wrap:wrap; }
+  #legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
+  @media (max-width:760px) { #info { display:none; } #ctl { width:calc(100% - 20px); max-height:40%; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="ctl" class="panel">
+  <h3>Play</h3>
+  <div class="row" id="atk"></div>
+  <div class="row" style="margin-top:4px"><button id="combo">Full combo</button><button id="loop">Loop</button><button id="reset">Reset pos</button></div>
+  <h3>Speed</h3>
+  <div class="row" id="spd"></div>
+  <h3>Camera</h3>
+  <div class="row" id="cams"></div>
+  <h3>Show</h3>
+  <div class="row" id="tog"></div>
+  <h3>Transitions</h3>
+  <div class="row"><button id="hit">Hit react</button><button id="die">Die</button><button id="rev">Revive</button><button id="walk">Walk-cancel</button></div>
+</div>
+<pre id="info" class="panel"></pre>
+<div id="tl" class="panel"><canvas id="tlc"></canvas>
+  <div id="legend"><span><i style="background:var(--antic)"></i>anticipation</span><span><i style="background:var(--accel)"></i>acceleration</span>
+    <span><i style="background:var(--follow)"></i>follow-through</span><span><i style="background:var(--recov)"></i>recovery</span>
+    <span><i style="background:var(--active)"></i>active hit window</span><span>&#9650; buffer &nbsp; &#9670; chain &nbsp; &#9632; move-cancel &nbsp; white = logical, yellow = visual clock</span></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="textures.js"></script>
+<script src="locomotion.js"></script>
+<script src="heromodel.js"></script>
+<script src="knight.js"></script>
+<script>
+(function () {
+  const q = new URLSearchParams(location.search);
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x16252f);
+  scene.fog = new THREE.Fog(0x16252f, 20, 60);
+  const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 200);
+  scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x2a3a46, 0.65));
+  const sun = new THREE.DirectionalLight(0xfff1dd, 1.0);
+  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -6, right: 6, top: 6, bottom: -6, near: 1, far: 40 });
+  sun.shadow.bias = -0.0006; scene.add(sun, sun.target);
+  const rim = new THREE.DirectionalLight(0x7fb2ff, 0.55); rim.position.set(5, 5, -7); scene.add(rim);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: 0x20384a, roughness: 1 }));
+  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+  const grid = new THREE.GridHelper(100, 200, 0x3b5d75, 0x2c4659); grid.position.y = 0.005; grid.material.transparent = true; grid.material.opacity = 0.5; scene.add(grid);
+
+  const knight = new Knight(); window.__knight = knight;
+  scene.add(knight.root); scene.add(knight.trail.mesh); scene.add(knight.slash.group);
+
+  // training post (hit target)
+  const post = new THREE.Group();
+  const pm = new THREE.MeshStandardMaterial({ color: 0xc9a46a, roughness: 0.9, flatShading: true });
+  const pc = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.38, 1.9, 10), pm); pc.position.y = 0.95; pc.castShadow = true; post.add(pc);
+  const ph = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), pm); ph.position.y = 2.05; ph.castShadow = true; post.add(ph);
+  scene.add(post);
+  const postTarget = { id: 'post', pos: post.position, radius: 0.4, height: 2.25, alive: () => post.visible };
+  let postFlash = 0;
+
+  /* ---------- state ---------- */
+  const S = { speed: parseFloat(q.get('speed') || '1'), cam: q.get('cam') || 'q34', loop: false, comboMode: false, pending: null,
+    show: { traj: true, hitwin: true, feet: true, trail: true, target: !q.has('notarget') }, walk: 0, last: null };
+  const camOff = { front: [0, 0.35, 6.2], side: [6.2, 0.35, 0], q34: [4.3, 1.4, 4.8], back: [0, 0.8, -6.2], top: [0, 7.5, 0.6] };
+  const ATK = (window.KNIGHT_COMBO || []).map((n) => ({ n, d: KNIGHT_DEFS[n] }));
+
+  /* ---------- trajectory overlay ---------- */
+  const trajGroup = new THREE.Group(); scene.add(trajGroup);
+  function phaseColor(d, u) {
+    const P = d.phases;
+    if (d.hitWinN.some((w) => u >= w[0] && u <= w[1])) return 0xff5a4e;
+    if (u < P.antic) return 0x8796a3; if (u < P.contact) return 0xe3b540; if (u < P.follow) return 0x4ea8ff; return 0x4a6577;
+  }
+  function buildTrajectory(name) {
+    while (trajGroup.children.length) { const c = trajGroup.children.pop(); c.geometry.dispose(); }
+    const d = KNIGHT_DEFS[name]; if (!d || !d.profile) return;
+    const smp = knight.sampleTrajectory(name, 200);
+    const m = new THREE.Matrix4().makeRotationY(knight.root.rotation.y).setPosition(knight.root.position);
+    const tip = [], col = [], hand = [], dots = [], dcol = [], fpL = [], fpR = [];
+    const c = new THREE.Color();
+    smp.forEach((s, i) => {
+      s.tip.applyMatrix4(m); s.hand.applyMatrix4(m); s.ankleL.applyMatrix4(m); s.ankleR.applyMatrix4(m);
+      tip.push(s.tip.x, s.tip.y, s.tip.z); c.setHex(phaseColor(d, s.u)); col.push(c.r, c.g, c.b);
+      hand.push(s.hand.x, s.hand.y, s.hand.z);
+      if (i % 5 === 0) { dots.push(s.tip.x, s.tip.y, s.tip.z); dcol.push(c.r, c.g, c.b); }   // equal TIME spacing: gaps = speed
+      if (s.cL && i % 4 === 0) fpL.push(s.ankleL.x, 0.012, s.ankleL.z);
+      if (s.cR && i % 4 === 0) fpR.push(s.ankleR.x, 0.012, s.ankleR.z);
+    });
+    const line = (pos, cols, mat) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); if (cols) g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3)); return new THREE.Line(g, mat); };
+    const pts = (pos, cols, size, color) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); if (cols) g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3)); return new THREE.Points(g, new THREE.PointsMaterial({ size, vertexColors: !!cols, color: color || 0xffffff, depthTest: false, transparent: true })); };
+    const tl = line(tip, col, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true })); tl.renderOrder = 30;
+    const hl = line(hand, null, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, depthTest: false })); hl.renderOrder = 30;
+    const dp = pts(dots, dcol, 0.06); dp.renderOrder = 31;
+    trajGroup.add(tl, hl, dp);
+    trajGroup.userData.feet = [pts(fpL, null, 0.05, 0x7dffb0), pts(fpR, null, 0.05, 0x7dd0ff)];
+    trajGroup.add(...trajGroup.userData.feet);
+    applyShow();
+  }
+
+  /* ---------- feet markers + slide measurement ---------- */
+  const footRing = (color) => { const m = new THREE.Mesh(new THREE.RingGeometry(0.07, 0.11, 18), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false })); m.rotation.x = -Math.PI / 2; scene.add(m); return m; };
+  const rings = { L: footRing(0x7dffb0), R: footRing(0x7dffb0) };
+  const feet = { L: { planted: false, anchor: new THREE.Vector3(), slide: 0 }, R: { planted: false, anchor: new THREE.Vector3(), slide: 0 } };
+  const tmpV = new THREE.Vector3();
+  function measureFeet() {
+    const cur = knight.cur;
+    for (const k of ['L', 'R']) {
+      const a = knight.J['an' + k].getWorldPosition(tmpV);
+      const c = cur['f' + k + '.c'] !== undefined ? cur['f' + k + '.c'] > 0.5 : cur['f' + k + '.y'] < 0.004;
+      const F = feet[k];
+      if (c && !F.planted) { F.anchor.set(a.x, 0, a.z); }
+      if (c) F.slide = Math.max(F.slide, Math.hypot(a.x - F.anchor.x, a.z - F.anchor.z));
+      F.planted = c;
+      rings[k].position.set(a.x, 0.015, a.z);
+      rings[k].material.color.setHex(c ? 0x63f08f : 0xffa53d);
+    }
+  }
+
+  /* ---------- kinetic-chain probe: when does each segment peak? ---------- */
+  const probe = { q: {}, p: {}, peaks: {}, t: 0 };
+  const segs = { hips: () => knight.J.hips, chest: () => knight.J.chest };
+  function chainProbe(dt) {
+    const st = knight.attackState; if (!st || dt <= 0) return;
+    for (const k in segs) {
+      const qw = segs[k]().getWorldQuaternion(new THREE.Quaternion());
+      if (probe.q[k]) { const w = 2 * Math.acos(Math.min(1, Math.abs(qw.dot(probe.q[k])))) / dt; peak(k, w, st); }
+      probe.q[k] = qw;
+    }
+    const hand = knight.J.wristR.getWorldPosition(new THREE.Vector3()), tip = knight.bladeTipWorld(new THREE.Vector3());
+    if (probe.p.hand) { peak('hand', hand.distanceTo(probe.p.hand) / dt, st); peak('tip', tip.distanceTo(probe.p.tip) / dt, st); }
+    probe.p.hand = hand; probe.p.tip = tip;
+  }
+  function peak(k, v, st) {
+    const d = KNIGHT_DEFS[st.name];
+    if (st.vu < d.phases.antic - 0.05 || st.vu > d.phases.follow) return;
+    if (!probe.peaks[k] || v > probe.peaks[k].v) probe.peaks[k] = { v, u: st.vu };
+  }
+  function resetProbe() { probe.q = {}; probe.p = {}; probe.peaks = {}; feet.L.slide = 0; feet.R.slide = 0; S.hits = 0; }
+
+  /* ---------- UI ---------- */
+  const mk = (parent, label, fn, id) => { const b = document.createElement('button'); b.textContent = label; if (id) b.dataset.id = id; b.onclick = fn; document.getElementById(parent).appendChild(b); return b; };
+  ATK.forEach((a, i) => mk('atk', (i + 1) + ' ' + a.d.label, () => playSingle(a.n), a.n));
+  [1, 0.5, 0.25, 0.1].forEach((s) => mk('spd', Math.round(s * 100) + '%', () => { S.speed = s; mark('spd', String(s)); }, String(s)));
+  Object.keys(camOff).forEach((c) => mk('cams', c === 'q34' ? '3/4' : c, () => { setCam(c); mark('cams', c); }, c));
+  const togLabels = { traj: 'Trajectory', hitwin: 'Hit windows', feet: 'Feet', trail: 'Trail', target: 'Target' };
+  Object.keys(togLabels).forEach((k) => mk('tog', togLabels[k], (e) => { S.show[k] = !S.show[k]; e.target.classList.toggle('on', S.show[k]); applyShow(); }, k).classList.toggle('on', S.show[k]));
+  function mark(group, id) { document.querySelectorAll('#' + group + ' button').forEach((b) => b.classList.toggle('on', b.dataset.id === id)); }
+  mark('spd', String(S.speed)); mark('cams', S.cam);
+  document.getElementById('combo').onclick = () => { S.comboMode = true; knight.revive(); knight.sinceAttack = 99; knight.attack(); onStart(); };
+  document.getElementById('loop').onclick = (e) => { S.loop = !S.loop; e.target.classList.toggle('on', S.loop); };
+  document.getElementById('reset').onclick = () => { knight.root.position.set(0, 0, 0); placePost(); buildTrajectory(S.last); };
+  document.getElementById('hit').onclick = () => knight.play('hit');
+  document.getElementById('die').onclick = () => knight.play('die');
+  document.getElementById('rev').onclick = () => knight.revive();
+  document.getElementById('walk').onclick = () => { S.walk = 0.6; };
+  function applyShow() {
+    trajGroup.visible = S.show.traj; knight.trail.mesh.visible = S.show.trail;
+    rings.L.visible = rings.R.visible = S.show.feet;
+    if (trajGroup.userData.feet) trajGroup.userData.feet.forEach((f) => (f.visible = S.show.feet));
+    post.visible = S.show.target;
+  }
+  function placePost() {
+    const y = knight.root.rotation.y;
+    post.position.set(knight.root.position.x + Math.sin(y) * 2.7, 0, knight.root.position.z + Math.cos(y) * 2.7);
+  }
+  function playSingle(name) { S.comboMode = false; S.pending = name; knight.revive(); knight.play(name); knight.combo = KNIGHT_COMBO.indexOf(name); onStart(); }
+  function onStart() { resetProbe(); S.lastAction = null; }
+
+  knight.hitTargets.push(postTarget);
+  knight.onEvent = (e) => { if (e.type === 'hit') { postFlash = 1; S.hits = (S.hits || 0) + 1; } };
+  placePost();
+
+  /* ---------- camera ---------- */
+  const controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true; controls.dampingFactor = 0.15; controls.enablePan = false;
+  function setCam(c) {
+    S.cam = c; const o = camOff[c], r = knight.root.position;
+    controls.target.set(r.x, 1.1, r.z + (c === 'top' ? 0.6 : 0.4));
+    camera.position.set(controls.target.x + o[0], controls.target.y + o[1], controls.target.z + o[2]);
+  }
+  setCam(S.cam);
+  function resize() { const w = window.innerWidth, h = window.innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+  window.addEventListener('resize', resize); resize();
+
+  /* ---------- timeline ---------- */
+  const tlc = document.getElementById('tlc'), tctx = tlc.getContext('2d');
+  function drawTimeline() {
+    const W = tlc.clientWidth, H = tlc.clientHeight, dpr = window.devicePixelRatio || 1;
+    if (tlc.width !== W * dpr) { tlc.width = W * dpr; tlc.height = H * dpr; }
+    tctx.setTransform(dpr, 0, 0, dpr, 0, 0); tctx.clearRect(0, 0, W, H);
+    const name = (knight.action && knight.action.def.profile) ? knight.action.name : S.last;
+    const d = name && KNIGHT_DEFS[name]; if (!d) return;
+    const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v);
+    const x = (u) => 4 + u * (W - 8), P = d.phases;
+    const band = (u0, u1, c, y, h) => { tctx.fillStyle = css(c); tctx.fillRect(x(u0), y, x(u1) - x(u0), h); };
+    band(0, P.antic, '--antic', 18, 18); band(P.antic, P.contact, '--accel', 18, 18); band(P.contact, P.follow, '--follow', 18, 18); band(P.follow, 1, '--recov', 18, 18);
+    if (S.show.hitwin) d.hitWinN.forEach((w) => band(w[0], w[1], '--active', 38, 8));
+    tctx.fillStyle = '#dcecf7'; tctx.font = '600 11px system-ui';
+    tctx.fillText(d.label + '  ' + Math.round(d.dur * 1000) + ' ms  (x' + (1 / knight.attackSpeed).toFixed(2) + ')', 4, 12);
+    const mk = (u, ch) => { tctx.fillText(ch, x(u) - 4, 58); };
+    mk(d.buffer, '▲'); mk(d.chain, '◆'); mk(d.move, '■');
+    tctx.fillStyle = '#ffffff'; tctx.fillRect(x(P.contact) - 0.5, 14, 1, 26);
+    if (knight.action && knight.action.name === name) {
+      const st = knight.attackState;
+      tctx.fillStyle = '#ffffff'; tctx.fillRect(x(st.u) - 1, 14, 2, 36);
+      tctx.fillStyle = '#ffd24a'; tctx.fillRect(x(st.vu) - 1, 30, 2, 20);
+    }
+  }
+
+  /* ---------- info ---------- */
+  const info = document.getElementById('info');
+  function drawInfo() {
+    const st = knight.attackState, a = knight.action;
+    const f = (v) => (v * 100).toFixed(1) + ' cm';
+    let s = '<b>state</b>     ' + (a ? a.name : (knight.dead ? 'dead' : 'idle/move')) + '\n';
+    if (st) s += '<b>phase</b>     ' + st.phase + (st.active ? '  [ACTIVE]' : '') + '\n<b>u</b>         ' + st.u.toFixed(3) + '  visual ' + st.vu.toFixed(3) + '\n';
+    else s += '\n\n';
+    s += '<b>combo</b>     ' + (knight.combo + 1) + '/4   buffered: ' + (knight.buffered ? 'yes' : 'no') + '\n';
+    s += '<b>canMove</b>   ' + knight.canMove + '   hit-stop ' + (knight.hitStopT > 0 ? 'ON' : '-') + '\n';
+    s += '<b>hits</b>      ' + (S.hits || 0) + '\n\n';
+    s += '<b>foot slide while planted</b> (max)\n  L ' + f(feet.L.slide) + '   R ' + f(feet.R.slide) + '\n\n';
+    s += '<b>kinetic chain</b> (peak u / speed)\n';
+    for (const k of ['hips', 'chest', 'hand', 'tip']) { const p = probe.peaks[k]; s += '  ' + k.padEnd(6) + (p ? p.u.toFixed(3) + '  ' + p.v.toFixed(1) + (k === 'hand' || k === 'tip' ? ' m/s' : ' rad/s') : '-') + '\n'; }
+    info.innerHTML = s;
+  }
+
+  /* ---------- deterministic analyzer (used by tools/analyze.mjs) ---------- */
+  window.__analyze = function (name, opts) {
+    opts = opts || {};
+    const dt = 1 / 240, K = knight, J = K.J, V = THREE.Vector3;
+    K.revive(); K.root.position.set(0, 0, 0); K.root.rotation.y = 0; K.hitTargets.length = 0;
+    if (opts.target) { post.visible = true; post.position.set(0, 0, opts.target); K.hitTargets.push(postTarget); }
+    K.onEvent = (e) => { if (e.type === 'hit') R.hits.push({ name: e.name, t: +(K.action ? K.action.t : 0).toFixed(3), win: e.window }); if (e.type === 'footplant') R.plants.push(e.name + ':' + e.foot); };
+    for (let i = 0; i < 60; i++) K.update(dt, {});
+    const R = { name, slide: { L: 0, R: 0 }, footErr: 0, handErr: 0, wristCorr: 0, peaks: {}, tipPeak: 0, tipAtContact: 0, hits: [], plants: [], minAnkleY: 9, frames: 0 };
+    const combo = name === 'combo';
+    if (combo) { K.sinceAttack = 99; K.attack(); } else { K.play(name); K.combo = KNIGHT_COMBO.indexOf(name); }
+    const F = { L: { pl: false, a: new V() }, R: { pl: false, a: new V() } };
+    let pq = {}, pp = {}, guard = 0;
+    while (K.action && guard++ < 2400) {
+      if (combo && K.combo < KNIGHT_COMBO.length - 1) K.attack();
+      const act = K.action.name, d = KNIGHT_DEFS[act];
+      K.update(dt, {});
+      R.frames++;
+      if (!K.action) break;
+      const cur = K.cur, st = K.attackState;
+      K.root.updateMatrixWorld(true);
+      for (const k of ['L', 'R']) {
+        const an = J['an' + k].getWorldPosition(new V());
+        const c = cur['f' + k + '.c'] > 0.5;
+        if (c && !F[k].pl) F[k].a.set(an.x, 0, an.z);
+        if (c && st && st.vu < 0.999) R.slide[k] = Math.max(R.slide[k], Math.hypot(an.x - F[k].a.x, an.z - F[k].a.z));
+        F[k].pl = c;
+        const tgt = J.spin.localToWorld(new V(cur['f' + k + '.x'], cur['f' + k + '.y'] + 0.095, cur['f' + k + '.z']));
+        R.footErr = Math.max(R.footErr, tgt.distanceTo(an));
+        R.minAnkleY = Math.min(R.minAnkleY, an.y);
+      }
+      // hand target vs actual wrist, blade target vs actual blade (wrist-limit corrections)
+      const sh = J.spin.worldToLocal(J.shR.getWorldPosition(new V()));
+      const ht = J.spin.localToWorld(sh.add(new V(cur['ik.hx'], cur['ik.hy'], cur['ik.hz']).multiplyScalar(Knight.ARM_K || 1)));
+      R.handErr = Math.max(R.handErr, ht.distanceTo(J.wristR.getWorldPosition(new V())));
+      const bt = new V(cur['ik.bx'], cur['ik.by'], cur['ik.bz']).transformDirection(J.spin.matrixWorld);
+      const ba = K.sword.localToWorld(new V(0, 1.17, 0)).sub(K.sword.localToWorld(new V(0, 0.2, 0))).normalize();
+      R.wristCorr = Math.max(R.wristCorr, Math.acos(Math.min(1, Math.max(-1, bt.dot(ba)))) * 180 / Math.PI);
+      if (st && d.profile && st.vu >= d.phases.antic - 0.05 && st.vu <= d.phases.follow) {
+        const key = combo ? act : 'x';
+        R.peaks[key] = R.peaks[key] || {};
+        const pk = R.peaks[key];
+        for (const s of ['hips', 'chest']) {
+          const qw = J[s].getWorldQuaternion(new THREE.Quaternion());
+          if (pq[s]) { const w = 2 * Math.acos(Math.min(1, Math.abs(qw.dot(pq[s])))) / dt; if (!pk[s] || w > pk[s].v) pk[s] = { v: +w.toFixed(1), u: +st.vu.toFixed(3) }; }
+          pq[s] = qw;
+        }
+        const hand = J.wristR.getWorldPosition(new V()), tip = K.sword.localToWorld(new V(0, 1.17, 0));
+        if (pp.hand) {
+          const hv = hand.distanceTo(pp.hand) / dt, tv = tip.distanceTo(pp.tip) / dt;
+          if (!pk.hand || hv > pk.hand.v) pk.hand = { v: +hv.toFixed(1), u: +st.vu.toFixed(3) };
+          if (!pk.tip || tv > pk.tip.v) pk.tip = { v: +tv.toFixed(1), u: +st.vu.toFixed(3) };
+          R.tipPeak = Math.max(R.tipPeak, tv);
+          if (Math.abs(st.vu - d.phases.contact) < 0.006) R.tipAtContact = tv;
+        }
+        pp.hand = hand; pp.tip = tip;
+      } else { pq = {}; pp = {}; }
+    }
+    R.travel = +Math.hypot(K.root.position.x, K.root.position.z).toFixed(2);
+    R.time = +(R.frames * dt).toFixed(3);
+    ['footErr', 'handErr', 'wristCorr', 'tipPeak', 'tipAtContact', 'minAnkleY'].forEach((k) => (R[k] = +R[k].toFixed(3)));
+    R.slide.L = +(R.slide.L * 100).toFixed(2) + 'cm'; R.slide.R = +(R.slide.R * 100).toFixed(2) + 'cm';
+    return R;
+  };
+
+  /* ---------- loop ---------- */
+  const clock = new THREE.Clock();
+  const prev = new THREE.Vector3();
+  let lastName = null;
+  const auto = q.get('play');
+  if (auto === 'combo') document.getElementById('combo').click(); else if (auto) playSingle(auto);
+  function tick() {
+    requestAnimationFrame(tick);
+    const rdt = Math.min(clock.getDelta(), 0.05), dt = rdt * S.speed;
+    if (S.comboMode && knight.action && knight.combo < KNIGHT_COMBO.length - 1) knight.attack();   // mash through the whole combo
+    prev.copy(knight.root.position);
+    let move = 0;
+    if (S.walk > 0) { S.walk -= rdt; if (knight.canMove) { move = 1; knight.root.position.z += 3.6 * dt * Math.cos(knight.root.rotation.y); knight.root.position.x += 3.6 * dt * Math.sin(knight.root.rotation.y); } }
+    knight.update(dt, { move });
+    const name = knight.action && knight.action.def.profile ? knight.action.name : null;
+    if (name && name !== lastName) { S.last = name; buildTrajectory(name); }
+    if (!knight.action && lastName && S.loop) {
+      if (S.comboMode) { setTimeout(() => { knight.root.position.set(0, 0, 0); placePost(); document.getElementById('combo').click(); }, 350); S.comboMode = false; }
+      else if (S.pending) { const n = S.pending; setTimeout(() => { knight.root.position.set(0, 0, 0); placePost(); playSingle(n); }, 350); }
+    }
+    lastName = name;
+    measureFeet(); chainProbe(dt);
+    postFlash = Math.max(0, postFlash - rdt * 5); pm.emissive.setRGB(postFlash * 0.6, postFlash * 0.3, 0);
+    const delta = knight.root.position.clone().sub(prev);
+    camera.position.add(delta); controls.target.add(delta);
+    controls.update();
+    sun.position.copy(knight.root.position).add(new THREE.Vector3(-6, 12, 7)); sun.target.position.copy(knight.root.position);
+    renderer.render(scene, camera);
+    drawTimeline(); drawInfo();
+  }
+  tick();
+  document.title = 'Melee Animation Preview';
+  window.__ready = true;
+})();
+</script>
+</body>
+</html>

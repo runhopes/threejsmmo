@@ -1,0 +1,5 @@
+/* TDS - inventory window (ui/inventory.js). All drawing is canvas; this only places the element. */
+#hud-root .inv-win { position: absolute; left: 0; top: 0; pointer-events: auto; user-select: none; -webkit-user-select: none; }
+/* hud.windows hides a closed window at once; the Atherion window slides out first (PanelBase, 0.3 s), so keep it drawn meanwhile */
+#hud-root .inv-win.inv-closing[hidden] { display: block !important; pointer-events: none; }
+#hud-root .inv-win canvas { position: absolute; left: 0; top: 0; display: block; pointer-events: none; }

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Castle Village - dev viewer</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #c8d2d6; font: 12px/1.4 system-ui, Segoe UI, sans-serif; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #hud { position: fixed; left: 10px; top: 10px; background: rgba(14, 20, 26, .78); color: #dfe8ee; padding: 8px 10px; border-radius: 6px; max-width: 46ch; white-space: pre-wrap; }
+  #hud b { color: #f0d890; }
+  #err { position: fixed; right: 10px; top: 10px; color: #ff7070; font: 12px monospace; white-space: pre-wrap; background: rgba(0,0,0,.6); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">loading...</div>
+<div id="err"></div>
+<script>window.addEventListener('error', (e) => { document.getElementById('err').textContent += e.message + ' (' + (e.filename || '').split('/').pop() + ':' + e.lineno + ')\n'; document.title = 'ERR'; });</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="textures.js"></script>
+<script src="locomotion.js"></script>
+<script src="heromodel.js"></script>
+<script src="knight.js"></script>
+<script src="village/core.js"></script>
+<script src="village/materials.js"></script>
+<script src="village/terrain.js"></script>
+<script src="village/architecture.js"></script>
+<script src="village/fortifications.js"></script>
+<script src="village/props.js"></script>
+<script src="village/phtex.js"></script>
+<script src="village/forest.js"></script>
+<script src="village/atmosphere.js"></script>
+<script src="world/layout.js"></script>
+<script src="world/terrain.js"></script>
+<script src="world/nav.js"></script>
+<script src="world/scenery.js"></script>
+<script src="village/scene.js"></script>
+<script>
+/* Dev viewer for the castle village: free orbit, game-camera presets, collision / nav / spawn debug overlay.
+   Keys: 1-9 views, ` debug overlay, WASD walk the hero (collision), right click = path-find move, F = toggle roof fade.
+   URL: ?view=<name>&debug=1&hero=0 */
+(function () {
+  const q = new URLSearchParams(location.search);
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.25, 1200);
+  // same environment / light rig as the game
+  (function makeEnv() {
+    const s = new THREE.Scene(), geo = new THREE.SphereGeometry(10, 24, 16), p = geo.attributes.position, col = [];
+    const top = new THREE.Color(0xe4efff), mid = new THREE.Color(0x7d96ad), bot = new THREE.Color(0x182733);
+    for (let i = 0; i < p.count; i++) { const y = p.getY(i) / 10; const c = y > 0 ? mid.clone().lerp(top, Math.pow(y, 0.7)) : mid.clone().lerp(bot, Math.min(1, -y * 1.6)); col.push(c.r, c.g, c.b); }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    s.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+    const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(s, 0.02).texture; pm.dispose();
+  })();
+  const hemi = new THREE.HemisphereLight(0xcfe3ff, 0x2a3a46, 0.45); scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xfff1dd, 1.0); sun.castShadow = true; scene.add(sun, sun.target);
+  const rim = new THREE.DirectionalLight(0x7fb2ff, 0.55); rim.position.set(5, 5, -7); scene.add(rim);
+
+  const world = Village.create({ renderer, scene, camera, lights: { hemi, sun, rim } });
+  window.__world = world;
+  const controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true; controls.dampingFactor = 0.12; controls.maxPolarAngle = Math.PI / 2 - 0.03;
+  controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: -1 };
+
+  // the game spawns interactive dummies from the registry; show them here too
+  for (const d of world.registry.dummies) { const D = Village.Props.makeDummy(); D.g.position.set(d.x, 0, d.z); D.g.rotation.y = d.yaw; scene.add(D.g); }
+  let hero = null;
+  if (q.get('hero') !== '0' && window.Knight) { hero = new Knight({ cls: q.get('cls') || 'warrior' }); scene.add(hero.root); }
+  const sp = world.spawn('plaza');
+  if (hero) { hero.root.position.copy(sp.position); hero.root.rotation.y = sp.yaw; }
+
+  const ISO = [0, 6.8, 8.6];
+  const R = world.registry;
+  const npc = (role) => R.npcs.find((n) => n.role === role || n.id === role);
+  const views = {
+    spawn: { at: sp.position, iso: 1 },
+    spawnFar: { at: sp.position, iso: 2.3 },
+    overview: { pos: [0, 245, 150], tgt: [0, 0, -2] },
+    top: { pos: [0, 330, 0.01], tgt: [0, 0, 0], fov: 32 },
+    gateOut: { at: new THREE.Vector3(0, 0, world.registry.spawns.gate_outer.position.z + 6), iso: 2.0 },
+    gateIn: { at: world.registry.spawns.gate_inner.position, iso: 1.4 },
+    keep: { at: new THREE.Vector3(0, 0, -36), iso: 2.2 },
+    market: { at: new THREE.Vector3(35, 0, -2), iso: 1.6 },
+    tavern: { at: new THREE.Vector3(36, 0, -14), iso: 1.3 },
+    blacksmith: { at: npc('blacksmith').position, iso: 1.2 },
+    healer: { at: npc('healer').position, iso: 1.2 },
+    yard: { at: R.spawns.training.position, iso: 1.8 },
+    well: { at: new THREE.Vector3(-42, 0, -34), iso: 1.8 },
+    stable: { at: new THREE.Vector3(-40, 0, 52), iso: 2.0 },
+    west: { at: new THREE.Vector3(-40, 0, 2), iso: 2.0 },
+    northeast: { at: new THREE.Vector3(40, 0, -48), iso: 2.0 },
+    plazaLow: { pos: [14, 4.5, 22], tgt: [0, 3, -10] },
+    skyline: { pos: [40, 22, 140], tgt: [0, 8, 0] },
+    wallWalk: { pos: [-60, 16, 92], tgt: [-30, 6, 70] },
+    corner: { pos: [110, 40, 120], tgt: [70, 6, 70] },
+  };
+  const names = Object.keys(views);
+  let cur = q.get('view') || 'spawn';
+  function setView(name) {
+    const v = views[name]; if (!v) return false; cur = name;
+    camera.fov = v.fov || 38; camera.updateProjectionMatrix();
+    if (v.at) {
+      const t = v.at.clone(); if (hero) { hero.root.position.set(t.x, 0, t.z); world.collide(hero.root.position); }
+      const k = v.iso || 1;
+      camera.position.set(t.x + ISO[0] * k, ISO[1] * k, t.z + ISO[2] * k); controls.target.set(t.x, 1.3, t.z);
+    } else { camera.position.set(...v.pos); controls.target.set(...v.tgt); }
+    controls.update();
+    return true;
+  }
+  // world tools: free camera / hero teleport (tools/worldshot.mjs)
+  window.__cam = (pos, tgt, fov) => { if (hero) hero.root.position.set(pos[0], 0, pos[2]); camera.fov = fov || 38; camera.updateProjectionMatrix(); camera.position.set(...pos); controls.target.set(...tgt); controls.update(); };
+  window.__at = (x, z, iso) => { const t = new THREE.Vector3(x, 0, z); if (hero) { hero.root.position.set(x, 0, z); world.collide(hero.root.position); } const k = iso || 1; camera.fov = 38; camera.updateProjectionMatrix(); camera.position.set(t.x + ISO[0] * k, ISO[1] * k, t.z + ISO[2] * k); controls.target.set(t.x, 1.3, t.z); controls.update(); world.update(0.016, camera, hero ? hero.root.position : controls.target, sun); };
+  window.__ortho = (cx, cz, w, d) => { if (!w) { window.__oc = null; if (window.__fog) scene.fog = window.__fog; return; } window.__fog = window.__fog || scene.fog; scene.fog = null; const c = new THREE.OrthographicCamera(-w / 2, w / 2, d / 2, -d / 2, 1, 700); c.position.set(cx, 400, cz); c.up.set(0, 0, -1); c.lookAt(cx, 0, cz); c.updateMatrixWorld(); window.__oc = c; };
+  window.__setView = setView; window.__views = names;
+  setView(cur);
+  if (q.get('debug') === '1') world.setDebug(true);
+
+  // input: WASD walk with collision, right-click path
+  const keys = {}; let path = null; let fadeOn = true;
+  addEventListener('keydown', (e) => {
+    keys[e.key.toLowerCase()] = true;
+    if (e.key === '`') world.toggleDebug();
+    if (e.key === 'f') fadeOn = !fadeOn;
+    const n = parseInt(e.key); if (n >= 1 && n <= 9) setView(names[n - 1]);
+  });
+  addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.button !== 2 || !hero) return;
+    const r = canvas.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera); const h = ray.intersectObject(world.pickPlane)[0];
+    if (h) { const t0 = performance.now(); path = world.findPath(hero.root.position, h.point); window.__lastPathMs = performance.now() - t0; }
+  });
+  function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+  addEventListener('resize', resize); resize();
+
+  const hud = document.getElementById('hud'), clock = new THREE.Clock();
+  let frames = 0, ft = 0, fps = 0;
+  const st = world.stats;
+  function tick() {
+    requestAnimationFrame(tick);
+    const dt = Math.min(clock.getDelta(), 0.05);
+    let move = 0;
+    if (hero) {
+      const d = new THREE.Vector3((keys.d ? 1 : 0) - (keys.a ? 1 : 0), 0, (keys.s ? 1 : 0) - (keys.w ? 1 : 0));
+      if (d.lengthSq() === 0 && path && path.length) { d.set(path[0].x - hero.root.position.x, 0, path[0].z - hero.root.position.z); if (d.length() < 0.3) { path.shift(); d.set(0, 0, 0); } }
+      if (d.lengthSq() > 0) {
+        d.normalize(); move = 1;
+        const prev = hero.root.position.clone();
+        hero.root.position.addScaledVector(d, 3.9 * dt); hero.root.rotation.y = Math.atan2(d.x, d.z);
+        world.collide(hero.root.position);
+        const delta = hero.root.position.clone().sub(prev); camera.position.add(delta); controls.target.add(delta);
+      }
+      hero.update(dt, { move, speed: move ? 3.9 : 0 });
+    }
+    controls.update();
+    const focus = hero ? hero.root.position : controls.target;
+    world.update(dt, camera, fadeOn ? focus : null, sun);
+    if (!fadeOn) Village.fade.uFadeOn.value = 0;
+    renderer.render(scene, window.__oc || camera);
+    frames++; ft += dt; if (ft > 0.5) { fps = Math.round(frames / ft); frames = 0; ft = 0; }
+    if (frames === 1) hud.innerHTML = '<b>' + cur + '</b>  ' + fps + ' fps   calls ' + renderer.info.render.calls + '   tris ' + (renderer.info.render.triangles / 1000).toFixed(0) + 'k\n' +
+      'build ' + st.buildMs + ' ms (tex ' + st.texMs + ', nav ' + st.navMs + ')   meshes ' + st.meshes + '   colliders ' + st.colliders + '\n' +
+      'world tris ' + (st.tris / 1000).toFixed(0) + 'k   tufts ' + st.tufts + '   ' + (hero ? 'hero ' + hero.root.position.x.toFixed(1) + ', ' + hero.root.position.z.toFixed(1) : '') + '\n' +
+      'keys: 1-9 views, ` debug, WASD walk, RMB path, F fade';
+    window.__frames = (window.__frames || 0) + 1;
+    if (window.__frames === 6) document.title = 'ready';
+  }
+  if (hero && hero.whenReady) hero.whenReady(tick); else tick();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+/* TDS - skills window (ui/skillswin.js). All drawing is canvas; this only places the element. */
+#hud-root .sw-win { position: absolute; left: 0; top: 0; pointer-events: auto; user-select: none; -webkit-user-select: none; }
+#hud-root .sw-win canvas { position: absolute; left: 0; top: 0; display: block; pointer-events: none; }

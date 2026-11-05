@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>HUD bench · chat + menu strip</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="../hud.css">
+<link rel="stylesheet" href="chat.css">
+</head>
+<body>
+<script src="paint.js"></script>
+<script src="chat.js"></script>
+<script src="menustrip.js"></script>
+<script>
+/* bench-only extras (sample data never ships):  ?inv=1 a stub 'inv' window so the strip shows Envanter · ?lines=N extra sample lines ·
+   ?ts=1 timestamps · ?alpha=0.5 resting plate · ?tab=0|1|2 · ?chat=1 typing mode (+ ?say=text typed into the input) · ?scroll=N wheel notches up */
+(function () {
+  const q = new URLSearchParams(location.search);
+  if (q.get('inv') === '1') HUDParts.inventory = function (hud) {
+    const el = document.createElement('div'); el.className = 'hud-win'; el.style.cssText = 'left:40%;top:30%;width:200px;height:120px;padding:12px';
+    el.textContent = 'stub inventory'; hud.frame.appendChild(el);
+    hud.windows.register('inv', el, {}); hud.keymap.i = 'inv'; hud.keymap['ı'] = 'inv';
+    return {};
+  };
+})();
+</script>
+<script src="../hud.js"></script>
+<script src="bench.js"></script>
+<script>
+(function () {
+  const q = new URLSearchParams(location.search), hud = window.__hud;
+  addEventListener('keydown', (e) => hud.onKeyDown(e));             // index.html routes keys through the HUD the same way
+  const n = +q.get('lines') || 0;
+  const sample = [['combat', 'Bozkır Kurdu · 342 hasar', 'dmg'], ['combat', 'Bozkır Kurdu · 96 hasar · zehir', 'dot'], ['system', 'Demir Beden sona erdi.', 'end'],
+    ['combat', 'Bozkır Kurdu sana vurdu · 118', 'hurt'], ['system', 'Mezar Bekçisi öldürüldü · +640 tecrübe · Kemik Tılsım, Paslı Anahtar, Eski Sikke Kesesi ve Bekçinin Yırtık Pelerini', 'lvl']];
+  for (let i = 0; i < n; i++) { const s = sample[i % sample.length]; hud.logLine(s[0], s[1], s[2]); }
+  if (q.get('ts') || q.get('alpha')) { if (q.get('ts')) hud.settings.timestamps = true; if (q.get('alpha')) hud.settings.logAlpha = +q.get('alpha'); hud.log.applySettings(hud.settings); }
+  if (q.get('tab')) { const b = document.querySelectorAll('.hud-chat .ct-tab')[+q.get('tab')]; if (b) b.click(); }
+  setTimeout(() => {
+    if (q.get('chat') === '1') { hud.log.focus(); const i = document.querySelector('.hud-chat input'); if (q.get('say')) i.value = q.get('say'); }
+    for (let k = 0; k < (+q.get('scroll') || 0); k++) {
+      const r = document.querySelector('.hud-chat').getBoundingClientRect();
+      document.body.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -100, clientX: r.left + 80, clientY: r.bottom - 80 * hud.s }));
+    }
+  }, 600);
+})();
+</script>
+</body>
+</html>

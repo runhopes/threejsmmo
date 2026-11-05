@@ -1,0 +1,19 @@
+/* TDS HUD part — chat panel (ui/chat.js). Everything visible is drawn on the canvas; these are the hit layers and the real input. */
+.hud-chat { position: absolute; pointer-events: none; z-index: 2; }
+/* canvas text inherits the numeric features from the element (Chrome / Edge): Alegreya lnum + tnum like Atherion (chat_view._serif) */
+.hud-chat .ct-cv { position: absolute; pointer-events: none; font-variant-numeric: lining-nums tabular-nums; font-feature-settings: 'lnum' 1, 'tnum' 1; }
+.hud-chat .ct-plate { position: absolute; inset: 0; pointer-events: none; cursor: move; }
+.hud-chat.open .ct-plate { pointer-events: auto; }
+.hud-chat .ct-tab { position: absolute; pointer-events: auto; cursor: pointer; z-index: 2; }
+.hud-chat .ct-hint { position: absolute; pointer-events: auto; cursor: text; z-index: 2; }
+.hud-chat.open .ct-hint { pointer-events: none; }
+#hud-root .hud-chat input.ct-in {
+  position: absolute; z-index: 3; margin: 0; padding: 0; border: 0; outline: 0; background: transparent; box-shadow: none;
+  font-family: Alegreya, Georgia, serif; font-weight: 500; line-height: normal; letter-spacing: 0;
+  font-variant-numeric: lining-nums tabular-nums; font-feature-settings: 'lnum' 1, 'tnum' 1;
+  color: #E3D3B7; caret-color: rgba(226, 199, 143, .9);
+  opacity: 0; pointer-events: none; transition: opacity .08s cubic-bezier(.25, 1, .5, 1);
+}
+#hud-root .hud-chat.open input.ct-in { opacity: 1; pointer-events: auto; transition-duration: .12s; }
+#hud-root .hud-chat input.ct-in::placeholder { color: rgba(149, 131, 101, .75); opacity: 1; }
+#hud-root .hud-chat input.ct-in::selection { background: rgba(226, 199, 143, .35); color: #F4E3BC; }

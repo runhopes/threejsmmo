@@ -1,0 +1,2045 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
+<script>/* touch devices: lighter shadows, set before the village reads its options */
+(function () { var m = window.matchMedia && window.matchMedia("(pointer: coarse)").matches; window.__MOBILE = m; if (m && !/[?&]vshadow=/.test(location.search)) history.replaceState(null, "", location.pathname + (location.search ? location.search + "&" : "?") + "vshadow=2048" + location.hash); })();
+</script>
+<title>TDS MOBA - Knight (spike)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="ui/fonts.css">
+<link rel="stylesheet" href="hud.css">
+<link rel="stylesheet" href="ui/core.css">
+<link rel="stylesheet" href="ui/inventory.css">
+<link rel="stylesheet" href="ui/worldmap.css">
+<link rel="stylesheet" href="ui/chat.css">
+<link rel="stylesheet" href="ui/menuwin.css">
+<link rel="stylesheet" href="ui/death.css">
+<link rel="stylesheet" href="ui/charwin.css">
+<link rel="stylesheet" href="ui/skillswin.css">
+<style>
+  :root { --bg:#16252f; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; overflow:hidden; background:var(--bg); color:#DDD7C8;
+    font:13px/1.4 'Alegreya Sans', 'Segoe UI', system-ui, sans-serif; -webkit-user-select:none; user-select:none; }
+  html, body { cursor: var(--cur-default, default); }                     /* ui/cursor.js: bronze arrow, sword over a target */
+  canvas { display:block; width:100%; height:100%; touch-action:none; cursor: var(--cur-default, default); }
+  canvas.over-target { cursor: var(--cur-attack, pointer); }
+  /* class selection (same tokens as the HUD, hud.css) */
+  #select[hidden] { display:none !important; }
+  #select { position:fixed; inset:0; pointer-events:none; display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:32px 16px 28px; }
+  #select h1 { margin:0; font:500 26px/1.1 'Alegreya SC', Georgia, serif; letter-spacing:.16em; color:#DDD7C8; text-align:center; text-shadow:0 2px 8px rgba(0,0,0,.7); }
+  #select .sub { color:#979C96; margin-top:6px; letter-spacing:.02em; text-align:center; text-shadow:0 1px 2px #000; }
+  #select .cards { display:flex; gap:min(2.4vw,20px); pointer-events:auto; }
+  #select .card { all:unset; display:flex; flex-direction:column; justify-content:flex-start; cursor:pointer; width:min(30vw,260px); padding:12px 14px 13px; background:rgba(23,27,28,.92); border:1px solid #454944; border-radius:2px; transition:border-color .12s; }
+  #select .card:hover { border-color:#6B6F69; }
+  #select .card.on { border-color:#A58C63; box-shadow:inset 0 -2px 0 #A58C63; }
+  #select .card b { display:block; font:500 17px/1.2 'Alegreya SC', Georgia, serif; letter-spacing:.08em; color:#DDD7C8; }
+  #select .card small { display:block; color:#A58C63; margin:2px 0 8px; font-size:12px; letter-spacing:.02em; }
+  #select .card p { margin:0; color:#979C96; font-size:13px; line-height:1.45; }
+  #select .card .sk { display:flex; gap:3px; margin-top:10px; }
+  #select .card .sk i { width:24px; height:24px; overflow:hidden; border:1px solid #454944; }
+  #select .card .sk svg { width:100%; height:100%; display:block; }
+  #select #enter { all:unset; pointer-events:auto; cursor:pointer; margin-top:14px; padding:10px 34px; border:1px solid #A58C63; background:#222729; color:#DDD7C8;
+    font:500 15px/1 'Alegreya SC', Georgia, serif; letter-spacing:.14em; }
+  #select #enter:hover { background:#2A2F31; }
+  #select #enter[disabled] { opacity:.35; cursor:default; }
+  @media (max-width:640px) { #select .cards { gap:8px; } #select .card { width:31vw; padding:10px; } }
+  #err { position:fixed; left:8px; top:8px; color:#ff6b6b; font:12px monospace; white-space:pre-wrap; z-index:9; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="err"></div>
+
+<div id="select" hidden>
+  <div><h1>SINIFINI SEÇ</h1><div class="sub">Bir karta tıkla, hareketini izle, sonra oyuna gir</div></div>
+  <div>
+    <div class="cards">
+      <button class="card" data-cls="warrior"><b>SAVAŞÇI</b><small>Yakın dövüş &middot; kılıç</small><p>Geniş hilal savurmalar, 3'lü kombo, etrafını biçen girdap.</p></button>
+      <button class="card" data-cls="archer"><b>OKÇU</b><small>Uzak menzil &middot; yay</small><p>Seri ok atışları, 18 m menzil, üç oklu ok yağmuru.</p></button>
+      <button class="card" data-cls="mage"><b>BÜYÜCÜ</b><small>Ateş büyüsü &middot; asa</small><p>Patlayan ateş topları, gökten çağrılan alan hasarlı meteor.</p></button>
+    </div>
+    <div style="display:flex;justify-content:center"><button id="enter" disabled>OYUNA GİR</button></div>
+  </div>
+</div>
+
+
+<script>
+  window.addEventListener('error', function (e) { document.getElementById('err').textContent += 'ERR: ' + e.message + ' (' + (e.filename || '').split('/').pop() + ':' + e.lineno + ')\n'; document.title = 'ERR'; });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js" crossorigin="anonymous"></script>
+<script src="textures.js"></script>
+<script src="locomotion.js"></script>
+<script src="heromodel.js"></script>
+<script src="knight.js"></script>
+<!-- Atherion UI parts (ui/*.js): load before hud.js, which swaps its built-in components for them -->
+<script src="ui/cursor.js"></script>
+<script src="ui/paint.js"></script>
+<script src="ui/bottombar.js"></script>
+<script src="ui/target.js"></script>
+<script src="ui/inventory.js"></script>
+<script src="ui/minimap.js"></script>
+<script src="ui/compass.js"></script>
+<script src="ui/effects.js"></script>
+<script src="ui/worldmap.js"></script>
+<script src="ui/chat.js"></script>
+<script src="ui/menustrip.js"></script>
+<script src="ui/quests.js"></script>
+<script src="ui/party.js"></script>
+<script src="ui/menuwin.js"></script>
+<script src="ui/death.js"></script>
+<script src="ui/charwin.js"></script>
+<script src="ui/skillswin.js"></script>
+<script src="ui/feedback.js"></script>
+<script src="ui/nameplates.js"></script>
+<script src="hud.js"></script>
+<!-- creatures: levels 1-10 enemies (procedural models + animation, authoritative sim, client world) -->
+<script src="creatures/defs.js"></script>
+<script src="creatures/core.js"></script>
+<script src="creatures/sim.js"></script>
+<script src="creatures/net.js"></script>
+<script src="creatures/species/rat.js"></script>
+<script src="creatures/species/rabbit.js"></script>
+<script src="creatures/species/wolf.js"></script>
+<script src="creatures/species/snake.js"></script>
+<script src="creatures/species/boar.js"></script>
+<script src="creatures/species/goblin.js"></script>
+<script src="creatures/species/bear.js"></script>
+<script src="creatures/species/panther.js"></script>
+<script src="creatures/species/stag.js"></script>
+<script src="creatures/species/troll.js"></script>
+<script src="creatures/variants.js"></script>
+<script src="creatures/world.js"></script>
+<!-- castle village starter zone (procedural environment, collision, navigation, spawn registry) -->
+<script src="village/core.js"></script>
+<script src="village/materials.js"></script>
+<script src="village/terrain.js"></script>
+<script src="village/architecture.js"></script>
+<script src="village/fortifications.js"></script>
+<script src="village/props.js"></script>
+<script src="village/phtex.js"></script>
+<script src="village/forest.js"></script>
+<script src="village/atmosphere.js"></script>
+<script src="world/layout.js"></script>
+<script src="world/terrain.js"></script>
+<script src="world/nav.js"></script>
+<script src="world/scenery.js"></script>
+<script src="village/scene.js"></script>
+<script src="village/integrate.js"></script>
+<!-- archer VFX: pooled particles / trails / decals (vfx/core.js) + the archer skill effects (vfx/archer.js); bench: archer-vfx.html -->
+<script src="vfx/marker.js"></script>
+<script src="vfx/core.js"></script>
+<script src="vfx/archer.js"></script>
+<!-- impact: Atherion's hit / kill feedback (vfx/impact.js) + EXP orbs and level-up (vfx/progress.js); spec: vfx/impact-spec.md -->
+<script src="vfx/impact.js"></script>
+<script src="vfx/progress.js"></script>
+<!-- magefx: the mage's spell VFX (pooled particles / trails / ground decals / mesh effects + the nine spells); bench: magefx.html -->
+<script src="magefx/core.js"></script>
+<script src="magefx/particles.js"></script>
+<script src="magefx/trails.js"></script>
+<script src="magefx/ground.js"></script>
+<script src="magefx/meshes.js"></script>
+<script src="magefx/spells.js"></script>
+<script src="magefx/director.js"></script>
+<script>
+(function () {
+  const q = new URLSearchParams(location.search);
+  const debugAnim = q.get('anim');
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: !!debugAnim });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, window.__MOBILE ? 1.25 : 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  const BG = 0x16252f;
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(BG);
+  scene.fog = new THREE.Fog(BG, 24, 64);
+
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200); window.__camera = camera;
+
+  /* ---------- HUD (hud.js / hud.css): DOM overlay over the canvas, fed with the game state in updateHUD ---------- */
+  const _proj = new THREE.Vector3();
+  let targetSel = null;                                         // selected target id: the training dummy is the only selectable entity
+  const hud = GameHUD.create({
+    project: (x, y, z) => _proj.set(x, y, z).project(camera),
+    onSkill: (i) => castSkill(i),
+    onEscape: () => { if (targetSel) { targetSel = null; return true; } return false; },
+    onRestart: () => { location.href = location.pathname; },     // back to the class selection
+    onToggleWalk: () => { walkMode = !walkMode; },                 // walk / run knob on the action bar (same as C)
+    keys: [['W A S D', 'Hareket'], ['Sağ tık', 'Hedefe: koş ve saldır (tekrar tıkla / basılı tut) · zemine: yürü'], ['1 – 8', 'Yetenekler (Q = 1)'],
+      ['C', 'Yürü / koş'], ['Orta tuş', 'Kamerayı döndür (sürükle)'], ['Tekerlek', 'Yakınlaştır / uzaklaştır'], ['P · K · M · I', 'Karakter · Yetenekler · Harita · Envanter'], ['Enter', 'Sohbet satırı'],
+      ['Esc', 'Pencereyi kapat · hedefi bırak · menü'], ['E · X · R', 'Geliştirici: darbe al · öl · diril']],
+  });
+  window.__hud = hud;
+
+  /* ---------- environment (gives the metal something to reflect) ---------- */
+  (function makeEnv() {
+    const s = new THREE.Scene();
+    const geo = new THREE.SphereGeometry(10, 24, 16);
+    const p = geo.attributes.position, col = [];
+    const top = new THREE.Color(0xe4efff), mid = new THREE.Color(0x7d96ad), bot = new THREE.Color(0x182733);
+    for (let i = 0; i < p.count; i++) {
+      const y = p.getY(i) / 10;
+      const c = y > 0 ? mid.clone().lerp(top, Math.pow(y, 0.7)) : mid.clone().lerp(bot, Math.min(1, -y * 1.6));
+      col.push(c.r, c.g, c.b);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    s.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+    const soft = (w, h, pos, intensity, color) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(intensity), side: THREE.DoubleSide }));
+      m.position.set(pos[0], pos[1], pos[2]); m.lookAt(0, 0, 0); s.add(m);
+    };
+    soft(7, 3, [-6, 6, 5], 5, 0xfff2e0);   // key softbox
+    soft(4, 7, [7, 3, -5], 3, 0x9cc8ff);   // cool rim strip
+    soft(5, 2, [0, 8, -3], 2, 0xffffff);
+    const pm = new THREE.PMREMGenerator(renderer);
+    scene.environment = pm.fromScene(s, 0.02).texture;
+    pm.dispose();
+  })();
+
+  scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x2a3a46, 0.45));
+  const sun = new THREE.DirectionalLight(0xfff1dd, 1.0);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  const sc = sun.shadow.camera; sc.left = -8; sc.right = 8; sc.top = 8; sc.bottom = -8; sc.near = 1; sc.far = 40;
+  sun.shadow.bias = -0.0006;
+  scene.add(sun, sun.target);
+  const SUN_OFF = new THREE.Vector3(-6, 12, 7);
+  const rim = new THREE.DirectionalLight(0x7fb2ff, 0.55);
+  rim.position.set(5, 5, -7); scene.add(rim);
+
+  // ground
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), new THREE.MeshStandardMaterial({ color: 0x20384a, roughness: 1, metalness: 0 }));
+  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+  const grid = new THREE.GridHelper(120, 120, 0x3b5d75, 0x2c4659);
+  grid.position.y = 0.01; grid.material.transparent = true; grid.material.opacity = 0.45; scene.add(grid);
+  /* ---------- castle village (village/*.js): the starter town replaces the debug grid. ?world=arena keeps the old test arena ----------
+     The invisible ground plane stays the click-to-move ray target (all walkable ground is exactly y = 0). */
+  const VW = (!debugAnim && window.Village && q.get('world') !== 'arena') ? Village.forGame({ renderer, scene, camera, sun, rim }) : null;
+  if (VW) { ground.visible = false; ground.scale.set(4, 4, 1); grid.visible = false; }
+  if (VW && VW.World) { ground.scale.set(8, 10, 1); ground.position.set(0, 0, 900); ground.updateMatrixWorld(); }   // open world: the click-to-move ray plane must cover the whole map (it ended at z = 480)
+
+  // right-click move marker (vfx/marker.js): amber ring + chevrons snapping in, breathing while walking, fading on arrival
+  const moveMark = MoveMarker.create(THREE, scene), marker = moveMark.group;
+  // selected-target ring on the ground (neutral = amber); faded in / out by updateHUD
+  const targetRing = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.05, 72), new THREE.MeshBasicMaterial({ color: 0xc49a55, transparent: true, opacity: 0, depthWrite: false }));
+  targetRing.rotation.x = -Math.PI / 2; targetRing.position.y = 0.035; scene.add(targetRing);
+
+  /* ---------- knight ---------- */
+  const forcedCls = q.get('cls');
+  const heroes = {};
+  let knight;
+  if (debugAnim || forcedCls) knight = heroes[forcedCls || 'warrior'] = new Knight({ cls: forcedCls || 'warrior' });
+  else { for (const c of ['warrior', 'archer', 'mage']) heroes[c] = new Knight({ cls: c }); knight = heroes.warrior; }
+  for (const k in heroes) { const h = heroes[k]; scene.add(h.root); scene.add(h.trail.mesh); scene.add(h.slash.group); }
+  window.__knight = knight;
+  let selecting = !debugAnim && !forcedCls;
+  hud.setPerf({ tris: Math.round(knight.triangles) });
+
+  /* ---------- training dummy ---------- */
+  const dummy = (function () {
+    const g = new THREE.Group();
+    const mat = (c, o) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.85, metalness: 0, flatShading: true }, o || {}));
+    const wood = mat(0x7b5233), straw = mat(0xd2b26d), red = mat(0xb5382f), white = mat(0xf0e6ce), iron = mat(0x4a5564, { metalness: 0.5, roughness: 0.5 });
+    const mats = [wood, straw, red, white, iron];
+    const add = (p, geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x || 0, y || 0, z || 0); o.castShadow = true; o.receiveShadow = true; p.add(o); return o; };
+    add(g, new THREE.CylinderGeometry(0.75, 0.85, 0.16, 12), wood, 0, 0.08, 0);
+    add(g, new THREE.CylinderGeometry(0.78, 0.78, 0.04, 12), iron, 0, 0.18, 0);
+    const piv = new THREE.Group(); piv.position.y = 0.16; g.add(piv);
+    add(piv, new THREE.CylinderGeometry(0.1, 0.12, 1.9, 7), wood, 0, 0.95, 0);
+    add(piv, new THREE.BoxGeometry(1.25, 0.12, 0.12), wood, 0, 1.6, 0);
+    add(piv, new THREE.CylinderGeometry(0.34, 0.3, 0.85, 8), straw, 0, 1.3, 0).scale.z = 0.8;
+    for (const [r, m, z] of [[0.3, red, 0.28], [0.2, white, 0.285], [0.1, red, 0.29]]) {
+      const d = add(piv, new THREE.CylinderGeometry(r, r, 0.03, 14), m, 0, 1.35, z); d.rotation.x = Math.PI / 2;
+    }
+    add(piv, new THREE.SphereGeometry(0.27, 8, 6), straw, 0, 2.0, 0);
+    add(piv, new THREE.CylinderGeometry(0.36, 0.36, 0.06, 8), iron, 0, 0.95, 0).scale.z = 0.8;
+    add(piv, new THREE.CylinderGeometry(0.31, 0.31, 0.06, 8), iron, 0, 1.64, 0).scale.z = 0.8;
+    if (VW) g.position.set(VW.registry.dummies[0].x, 0, VW.registry.dummies[0].z); else g.position.set(2.0, 0, -3.8);
+    scene.add(g);
+    return { g, piv, mats, th: 0, om: 0, axis: new THREE.Vector3(1, 0, 0), flash: 0 };
+  })();
+  window.__dummy = dummy.g;
+  // the dummy is a swept-blade hit target (vertical capsule)
+  for (const k in heroes) heroes[k].hitTargets.push({ id: 'dummy', pos: dummy.g.position, radius: 0.42, height: 2.25 });
+  function dummyHit(dirX, dirZ, power) {
+    dummy.axis.set(dirZ, 0, -dirX).normalize();
+    dummy.om += 4.5 * power * (dummy.th > 0 ? 0.8 : 1);
+    dummy.flash = 1;
+  }
+
+  /* ---------- creatures (creatures/*.js): the local authority simulates them, the world renders them ----------
+     They join every hero's hitTargets as capsules (tg.creature set); damage on them goes through creatures.damage(). */
+  const creatures = (debugAnim || q.has('nocreatures')) ? null : CreatureWorld.create({
+    scene, camera, heroes, obstacles: [{ x: dummy.g.position.x, z: dummy.g.position.z, r: 0.55 }].concat(VW ? VW.creatureObstacles() : []), net: q.get('net'),
+    viewRadius: VW && VW.World ? 95 : undefined, activeRadius: VW && VW.World ? 105 : undefined,   // open world (~350 creatures): views + AI only near the hero
+    collide: VW ? (p, r) => VW.collide(p, r) : null,              // creatures: same walls / fences / props as the hero   // ?net=loopback: server + latency
+    zones: (VW ? VW.creatureZones : (z) => z)(CREATURE_DEFS.ZONES.filter((z) => CreatureKit.SPECIES[z.species])),   // village: camps re-sited south of the gate
+  });
+  window.__creatures = creatures;
+  const isCreature = (tg) => !!(tg && tg.creature);
+  if (VW) VW.addTrainingTargets(heroes);                        // village: dummies #2-#4 + three archery butts in the training yard
+
+  /* ---------- particles ---------- */
+  const parts = [];
+  const pGeo = new THREE.OctahedronGeometry(1, 0);
+  for (let i = 0; i < 110; i++) {
+    const m = new THREE.Mesh(pGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false }));
+    m.visible = false; scene.add(m);
+    parts.push({ m, v: new THREE.Vector3(), life: 0, max: 1, size: 0.1, grav: 0, grow: 0, a: 1 });
+  }
+  // soft round puffs for dust (growing particles): camera-facing sprites with a radial falloff, not hard-edged gems
+  const puffTex = (function () {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.45, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  for (let i = 0; i < 70; i++) {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex, color: 0xffffff, transparent: true, depthWrite: false }));
+    m.visible = false; scene.add(m);
+    parts.push({ m, soft: true, v: new THREE.Vector3(), life: 0, max: 1, size: 0.1, grav: 0, grow: 0, a: 1 });
+  }
+  function spawn(pos, vel, life, size, color, grav, grow, alpha) {
+    const p = parts.find((x) => x.life <= 0 && !x.soft === !grow); if (!p) return;
+    p.m.position.copy(pos); p.v.copy(vel); p.life = p.max = life; p.size = size; p.grav = grav; p.grow = grow || 0; p.a = alpha === undefined ? 1 : alpha;
+    p.m.material.color.setHex(color); p.m.visible = true;
+  }
+  const _p = new THREE.Vector3(), _v = new THREE.Vector3();
+  function sparks(pos, dirX, dirZ, n, power) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, s = 2.5 + Math.random() * 5 * power;
+      _v.set(dirX * s + Math.cos(a) * s * 0.5, 1.5 + Math.random() * 4, dirZ * s + Math.sin(a) * s * 0.5);
+      spawn(pos, _v, 0.22 + Math.random() * 0.28, 0.035 + Math.random() * 0.05, Math.random() < 0.3 ? 0xffffff : 0xffd873, -14, 0, 1);
+    }
+  }
+  function dust(x, z, n, spread, up) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, s = (0.6 + Math.random()) * spread;
+      _p.set(x + Math.cos(a) * 0.3, 0.08, z + Math.sin(a) * 0.3);
+      _v.set(Math.cos(a) * s, (up || 0.6) + Math.random() * 0.8, Math.sin(a) * s);
+      spawn(_p, _v, 0.5 + Math.random() * 0.35, 0.22 + Math.random() * 0.16, 0xb9b2a4, -1.2, 1.8, 0.32);
+    }
+  }
+
+  /* ---------- hit slash flare: a bright cut line at the impact, along the blade's travel ---------- */
+  const flares = [];
+  for (let i = 0; i < 4; i++) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      uniforms: { uA: { value: 0 }, uColor: { value: new THREE.Color(0xffffff) } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform float uA; uniform vec3 uColor; varying vec2 vUv;' +
+        'void main(){ vec2 p = vUv * 2.0 - 1.0; float taper = 1.0 - p.x * p.x;' +
+        ' float line = exp(-p.y * p.y * 90.0) * taper; float glow = exp(-p.y * p.y * 7.0) * taper * 0.35;' +
+        ' float a = (line + glow) * uA; gl_FragColor = vec4(mix(uColor, vec3(1.0), clamp(line, 0.0, 1.0)), a); }',
+    }));
+    m.visible = false; m.renderOrder = 25; scene.add(m);
+    flares.push({ m, t: 0, life: 0.16 });
+  }
+  const _fx = new THREE.Vector3(), _fy = new THREE.Vector3(), _fz = new THREE.Vector3(), _fm = new THREE.Matrix4();
+  function slashFlare(point, dir, color, power) {
+    const f = flares.reduce((a, b) => (a.t <= b.t ? a : b));
+    f.t = f.life; f.power = Math.min(1.6, power || 1);
+    f.m.position.copy(point);
+    _fz.copy(camera.position).sub(point).normalize();                          // face the camera
+    _fx.copy(dir).addScaledVector(_fz, -dir.dot(_fz));                         // cut direction across the screen
+    if (_fx.lengthSq() < 1e-6) _fx.set(1, 0, 0);
+    _fx.normalize(); _fy.crossVectors(_fz, _fx);
+    f.m.quaternion.setFromRotationMatrix(_fm.makeBasis(_fx, _fy, _fz));
+    f.m.material.uniforms.uColor.value.setHex(color || 0xbfe4ff);
+    f.m.visible = true;
+  }
+  function updateFlares(dt) {
+    for (const f of flares) {
+      if (f.t <= 0) continue;
+      f.t -= dt;
+      if (f.t <= 0) { f.m.visible = false; continue; }
+      const u = 1 - f.t / f.life, e = 1 - Math.pow(1 - u, 3);
+      f.m.scale.set((0.7 + 1.9 * e) * f.power, (0.42 - 0.25 * u) * f.power, 1);
+      f.m.material.uniforms.uA.value = Math.pow(1 - u, 1.4) * 1.6;
+    }
+  }
+
+  /* ---------- camera / controls ---------- */
+  const controls = new THREE.OrbitControls(camera, canvas); window.__controls = controls; window.__renderer = renderer;   // (debug / tools: tools/atmoshot.mjs teleports the camera with the hero)
+  controls.enableDamping = true; controls.dampingFactor = 0.12;
+  controls.enablePan = false;
+  controls.mouseButtons = { LEFT: -1, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: -1 }; // right click = attack / move (Metin2), middle drag = orbit, wheel = zoom, left = UI only
+  controls.minDistance = 3.5; controls.maxDistance = 24;
+  controls.minPolarAngle = 0.15; controls.maxPolarAngle = Math.PI / 2 - 0.05;
+  const presets = {
+    iso:   { pos: [0, 6.8, 8.6],  tgt: [0, 1.3, 0] },
+    q34:   { pos: [5.2, 3.0, 6.4], tgt: [0, 1.2, 0] },
+    front: { pos: [0, 1.7, 8.0],  tgt: [0, 1.25, 0] },
+    side:  { pos: [8.0, 1.7, 0],  tgt: [0, 1.25, 0] },
+    back:  { pos: [0, 1.9, -8.0], tgt: [0, 1.25, 0] },
+    top:   { pos: [0, 11, 3.0],   tgt: [0, 0.8, 0] },
+  };
+  const P0 = presets[q.get('cam')] || presets.iso;
+  camera.position.set(...P0.pos); controls.target.set(...P0.tgt);
+
+  function resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize); resize();
+
+  /* ---------- debug / screenshot mode: ?anim=attack1&t=0.3&cam=q34[&arc=1][&dummy=1] ---------- */
+  if (debugAnim) {
+  knight.whenReady(() => {   // wait for the embedded textures so captures are not black
+    document.querySelectorAll('.panel,#pips').forEach((p) => { if (!q.has('ui')) p.style.display = 'none'; });
+    dummy.g.visible = q.has('dummy');
+    if (q.get('team')) knight.setTeam(q.get('team'));
+    const t = parseFloat(q.get('t') || '0');
+    if (q.has('arc')) knight.debugArc(debugAnim, 48);
+    sun.position.copy(SUN_OFF); sun.target.position.set(0, 0, 0);
+    let n = 0;
+    if (q.has('sim')) {
+      /* filmstrip: run the REAL update() loop (blending, lunge, hit-stop, trail) and grab N frames.
+         ?anim=attack1&sim=8&cols=4&cam=q34&t0=0&t1=0.7   (anim may also be idle / run) */
+      const N = parseInt(q.get('sim')) || 8, cols = parseInt(q.get('cols')) || 4, rows = Math.ceil(N / cols);
+      const defs = window.KNIGHT_DEFS || {};
+      const t0 = parseFloat(q.get('t0') || '0');
+      const isCombo = debugAnim === 'combo';
+      const t1 = parseFloat(q.get('t1') || (defs[debugAnim] ? defs[debugAnim].dur : (isCombo ? 2.6 : 2)));
+      const cp = presets[q.get('cam')] || presets.q34;
+      const off = new THREE.Vector3(cp.pos[0] - cp.tgt[0], cp.pos[1] - cp.tgt[1], cp.pos[2] - cp.tgt[2]);
+      if (q.has('zoom')) off.multiplyScalar(parseFloat(q.get('zoom')));
+      knight.root.rotation.y = parseFloat(q.get('yaw') || '0');
+      knight.onEvent = () => {};
+      const input = { move: (debugAnim === 'run' || debugAnim === 'walk') ? 1 : 0, speed: debugAnim === 'walk' ? Knight.WALK_SPEED : undefined };
+      if (defs[debugAnim]) knight.play(debugAnim);
+      const dt = 1 / 120, w = window.innerWidth, h = window.innerHeight, pw = w / cols, ph = h / rows;
+      renderer.setScissorTest(true);
+      const cam = new THREE.PerspectiveCamera(parseFloat(q.get('fov') || '30'), pw / ph, 0.1, 200);
+      let pane = 0, time = 0;
+      const total = Math.round((t1 + 0.0001) / dt);
+      if (isCombo) knight.attack();
+      for (let s = 0; s <= total && pane < N; s++) {
+        if (isCombo && knight.combo < KNIGHT_COMBO.length - 1) knight.attack();   // mash: each press is buffered for the chain point
+        knight.update(dt, input); time += dt;
+        const want = t0 + (t1 - t0) * (N > 1 ? pane / (N - 1) : 0);
+        if (time >= want - dt * 0.5) {
+          const tgt = knight.root.position.clone(); tgt.y = parseFloat(q.get('ty') || String(cp.tgt[1]));
+          cam.position.copy(tgt).add(off); cam.lookAt(tgt);
+          sun.position.copy(knight.root.position).add(SUN_OFF); sun.target.position.copy(knight.root.position);
+          const x = (pane % cols) * pw, yTop = Math.floor(pane / cols) * ph;
+          renderer.setViewport(x, h - yTop - ph, pw, ph); renderer.setScissor(x, h - yTop - ph, pw, ph);
+          renderer.render(scene, cam);
+          const el = document.createElement('div');
+          el.textContent = 't=' + want.toFixed(2);
+          el.style.cssText = 'position:fixed;color:#dcecf7;font:600 12px system-ui;padding:3px 7px;background:#0009;border-radius:5px;z-index:5;left:' + (x + 6) + 'px;top:' + (yTop + 6) + 'px';
+          document.body.appendChild(el);
+          pane++;
+        }
+      }
+      document.title = 'ready';
+      return;
+    }
+    knight.debugPose(debugAnim, t);
+    knight.root.updateMatrixWorld(true);
+    controls.update();
+    if (q.has('sheet')) {
+      /* visual-validation contact sheet: 4 synchronized views of the same pose in one image */
+      const H = 1.0; // look-at height (hero is ~1.95 units tall)
+      const views = [
+        { label: 'FRONT', fov: 26, pos: [0, 1.15, 6.2], tgt: [0, H, 0] },
+        { label: 'SIDE (left profile)', fov: 26, pos: [6.2, 1.15, 0], tgt: [0, H, 0] },
+        { label: 'THREE-QUARTER', fov: 26, pos: [4.0, 1.9, 4.6], tgt: [0, H, 0] },
+        // gameplay camera at its real distance; fov halved so the hero is shown at true in-game pixel size
+        { label: 'MOBA GAMEPLAY (true scale)', fov: 2 * Math.atan(Math.tan(19 * Math.PI / 180) / 2) * 180 / Math.PI, pos: [0, 6.8, 8.6], tgt: [0, 1.3, 0] },
+      ].map((v) => {
+        const c = new THREE.PerspectiveCamera(v.fov, 1, 0.1, 200);
+        c.position.set(...v.pos); c.lookAt(...v.tgt); v.cam = c;
+        const el = document.createElement('div');
+        el.textContent = v.label;
+        el.style.cssText = 'position:fixed;color:#dcecf7;font:600 13px system-ui;padding:6px 10px;background:#0009;border-radius:6px;z-index:5';
+        document.body.appendChild(el); v.el = el;
+        return v;
+      });
+      renderer.setScissorTest(true);
+      const drawSheet = () => {
+        const w = window.innerWidth, h = window.innerHeight, hw = w / 2, hh = h / 2;
+        views.forEach((v, i) => {
+          const x = (i % 2) * hw, yTop = Math.floor(i / 2) * hh;
+          renderer.setViewport(x, h - yTop - hh, hw, hh); renderer.setScissor(x, h - yTop - hh, hw, hh);
+          v.cam.aspect = hw / hh; v.cam.updateProjectionMatrix();
+          renderer.render(scene, v.cam);
+          v.el.style.left = (x + 8) + 'px'; v.el.style.top = (yTop + 8) + 'px';
+        });
+      };
+      (function loopSheet() { drawSheet(); if (++n === 5) document.title = 'ready'; requestAnimationFrame(loopSheet); })();
+      return;
+    }
+    (function loop() {
+      renderer.render(scene, camera);
+      if (++n === 5) document.title = 'ready';
+      requestAnimationFrame(loop);
+    })();
+  });
+    return;
+  }
+
+  /* ---------- input ---------- */
+  const keys = {};
+  let moveTarget = null;
+  let walkMode = false, curSpeed = 0;
+  const lastDir = new THREE.Vector3();
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(0, 0);
+  const aimPoint = new THREE.Vector3();
+  function groundPoint(e) {
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObject(ground)[0];
+    if (hit) { aimPoint.copy(hit.point); aimPoint.y = 0; return true; }
+    return false;
+  }
+  let yaw = Math.PI - 0.5;   // start facing the dummy
+  let movePath = null;                                          // village: A* waypoints of the current right-click move
+  if (VW && !selecting) {                                       // ?cls= quick start: training yard, dummy #1 at the old +2 / -3.8 offset (?spawn=plaza|gate_inner|gate_outer)
+    const sp = VW.spawn(q.get('spawn') || 'training');
+    knight.root.position.copy(sp.position); yaw = sp.yaw; knight.root.rotation.y = yaw;
+    camera.position.add(sp.position); controls.target.add(sp.position); controls.update();
+  }
+  // one attack button: every press = next swing of the 3-hit combo
+  function doAttack(e) {                                          // attacking cancels a right-click move order
+    moveTarget = null;
+    if (knight.cls !== 'warrior') rangedAim = pickAim(e);
+    knight.attack();
+  }
+  /* ---------- click-to-attack (Metin2 style) ----------
+     Left click on a creature / the dummy: select it, run into attack range, face it and strike. Every further click is
+     the next attack (holding the button keeps attacking). Left click on empty ground walks there - it never swings.
+     WASD / right-click movement cancels the engagement; it ends by itself when the target dies. */
+  let engage = null, mouseHeld = false;
+  const ATTACK_RANGE = { warrior: 1.05, archer: 16, mage: 12 };   // edge-to-edge gap at which the basic attack fires
+  function engageTarget(key) {
+    if (VW && key && key.startsWith('vt:')) { const t = VW.trainingTarget(key); return t ? { x: t.pos.x, z: t.pos.z, r: t.radius, y: t.aimY } : null; }   // village training dummies / butts
+    if (key === 'dummy') return dummy.g.visible ? { x: dummy.g.position.x, z: dummy.g.position.z, r: 0.42, y: 1.4 } : null;
+    const c = creatures && creatures.byKey(key);
+    return c && c.alive && !c.despawned ? { x: c.x, z: c.z, r: c.D.radius, y: Math.min(1.4, Math.max(0.35, c.D.height * 0.55)), rec: c } : null;
+  }
+  const engageGap = (T) => Math.hypot(T.x - knight.root.position.x, T.z - knight.root.position.z) - T.r;
+  function strikeAt(T) {                                          // face the target, aim, one basic attack (combo continues)
+    const kp = knight.root.position;
+    if (!knight.action) { yaw = Math.atan2(T.x - kp.x, T.z - kp.z); knight.root.rotation.y = yaw; }   // mid-swing: soft auto-aim turns
+    if (knight.cls !== 'warrior') { rangedAim = new THREE.Vector3(T.x, T.y, T.z); rangedTarget = T.rec || null; }   // creatures: projectiles home in on T.rec
+    knight.attack();
+  }
+  window.addEventListener('pointerup', (e) => { if (e.button === 2) mouseHeld = false; });
+  window.addEventListener('blur', () => { mouseHeld = false; });
+  function clickTarget(key) {
+    targetSel = key; moveTarget = null;
+    if (!engage || engage.key !== key) engage = { key, presses: 0 };
+    engage.presses = Math.min(2, engage.presses + 1);
+    const T = engageTarget(key);
+    if (T && engageGap(T) <= ATTACK_RANGE[knight.cls]) { strikeAt(T); engage.presses = 0; }
+  }
+
+  /* mobile.js hooks: fire button + aim by holding a finger on the world (no tap-to-move on touch) */
+  window.__mobile = {
+    mv: null,                                                   // joystick move direction (world x / z) or null
+    aim(x, z) { if (selecting || !knight || knight.dead || knight.action) return; const kp = knight.root.position; yaw = Math.atan2(x - kp.x, z - kp.z); knight.root.rotation.y = yaw; },
+    fire() {                                                    // a creature within reach: run to it and fight; else attack toward the facing
+      if (selecting || !knight || knight.dead) return false;
+      const kp = knight.root.position, C = creatures && creatures.nearest(kp.x, kp.z, 16);
+      if (C) { clickTarget('cr:' + C.id); return true; }
+      engage = null; const a = knight.root.rotation.y;
+      strikeAt(new THREE.Vector3(kp.x + Math.sin(a) * 12, 1.0, kp.z + Math.cos(a) * 12));
+      return false;
+    },
+    hold(on) { mouseHeld = !!on; },
+  };
+
+  window.addEventListener('keydown', (e) => {
+    if (!selecting && hud.onKeyDown(e)) return;                  // HUD windows / Esc / keys typed into HUD controls
+    if (VW && e.key === '`' && !e.repeat) { VW.toggleDebug(); return; }   // village dev overlay: colliders, nav grid, spawns, NPC points
+    if (e.repeat || selecting) return;
+    const k = e.key.toLowerCase();
+    keys[k] = true;
+    if (k === 'c') walkMode = !walkMode;            // walk / run toggle
+    else if (k.length === 1 && '12345678'.includes(k)) castSkill(+k - 1);
+    else if (k === 'q') castSkill(0);
+    else if (k === 'e') { if (hero) takeDamage(hero.maxHp * 0.12); else knight.play('hit'); }        // dev: take a hit
+    else if (k === 'x') { if (hero && hero.hp > 0) { hero.hp = 0; hero.rapidLeft = 0; hud.logLine('system', 'Öldün.', 'hurt'); } knight.play('die'); }          // dev: die
+    else if (k === 'r') { const was = hero && hero.hp <= 0; knight.revive(); if (hero) { hero.hp = hero.maxHp; hero.hurtT = 99; if (was) hud.logLine('system', 'Dirildin.', 'sys'); } }      // dev: revive
+    if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) moveTarget = null;
+  });
+  window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+  window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  canvas.addEventListener('auxclick', (e) => e.preventDefault());   // no middle-click autoscroll
+  // is the training dummy under the pointer? (hover cursor + click-to-select)
+  function overDummy(e) {
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    return dummy.g.visible && ray.intersectObject(dummy.g, true).length > 0;
+  }
+  // creatures: the creature under the pointer (ray set by overDummy just before)
+  const overCreature = () => (creatures ? creatures.pick(ray) : null);
+  canvas.addEventListener('pointermove', (e) => {
+    lastPointer = { clientX: e.clientX, clientY: e.clientY };
+    if (selecting) return;
+    if (groundPoint(e)) mouseGround.copy(aimPoint);
+    canvas.classList.toggle('over-target', overDummy(e) || !!overCreature() || !!(VW && VW.pickTrainingTarget(ray)));
+  });
+  // Metin2-style: EVERY world action is on the RIGHT button - a target = run + attack (click again / hold = next hit), the
+  // ground = walk. The left button does nothing in the world (it is for the UI).
+  canvas.addEventListener('pointerdown', (e) => {
+    if (selecting) return;
+    if (e.button === 2) {
+      mouseHeld = true;
+      let key = null;
+      if (overDummy(e)) key = 'dummy'; else { const c = overCreature(); if (c) key = 'cr:' + c.id; }
+      if (!key && VW) key = VW.pickTrainingTarget(ray);            // village: dummies #2-#4, archery butts
+      if (key) { clickTarget(key); return; }
+      engage = null;
+      if (groundPoint(e)) {
+        moveTarget = aimPoint.clone();
+        if (VW) { movePath = VW.findPath(knight.root.position, moveTarget); if (movePath && movePath.length) moveTarget.copy(movePath[movePath.length - 1]); else moveTarget = null; }   // village: walk around buildings
+        if (moveTarget) moveMark.show(moveTarget.x, moveTarget.z);
+      }
+    }
+  });
+
+  /* ---------- UI ---------- */
+  let forced = null;
+  let pipT = 0;
+  function setPips(n) { hud.combo(n); pipT = 1.1; }                 // warrior combo ticks above the basic-attack slot
+
+  /* ---------- combat feedback ---------- */
+  let shake = 0, punch = 0, timeScale = 1;
+  const lastShake = new THREE.Vector3();
+  function damageNumber(worldPos, text, big, cls) { hud.combatText(worldPos, String(text), big ? 'crit' : (cls || 'dmg')); }
+
+  // impact sound hooks: no audio assets in the spike; an audio engine can listen for 'knight-sfx'
+  function sfx(id, detail) { if (id) window.dispatchEvent(new CustomEvent('knight-sfx', { detail: Object.assign({ id }, detail || {}) })); }
+  const shakeDir = new THREE.Vector3();
+
+  const onHeroEvent = (e) => {
+    if (selecting) { if (e.type === 'footplant') return; }
+    const kp = knight.root.position, yw = knight.root.rotation.y;
+    const fx = Math.sin(yw), fz = Math.cos(yw);
+    if (e.type === 'swing') {
+      if (e.name.startsWith('attack')) setPips(e.combo + 1);
+      sfx(e.sound, { name: e.name });
+    } else if (e.type === 'footplant') {
+      dust(e.position.x, e.position.z, e.heavy ? 5 : 2, e.heavy ? 1.4 : 0.7, 0.3);
+      sfx(e.sound, { foot: e.foot });
+    } else if (e.type === 'hit') {
+      // damage is applied from the swept blade hit (already range/arc-validated inside the knight)
+      const d = e.def, tgt = e.target;
+      if (tgt.id === 'dummy') dummyHit(e.dir.x, e.dir.z, e.power);
+      // the hit itself (ember burst, impact mark, flash, blade sparks) is Atherion's MobHitFx, played by dealDamage -> impactHit;
+      // the 3rd combo swing and skill strikes knock down (heavy: SHATTER mark, bigger burst, heavy spark tier)
+      dealDamage(tgt, e.power * (88 + Math.random() * 34) * skillMul(e.skill), { big: !!d.slam || e.name === 'attack4', heavy: e.name === 'attack3' || !!e.skill || !!d.slam });
+      shake = Math.max(shake, d.shake);
+      shakeDir.copy(e.dir).multiplyScalar(d.shake * 0.6);
+      punch = Math.max(punch, Math.min(1, e.power * 0.45));
+      sfx(e.sound, { power: e.power, name: e.name });
+    } else if (e.type === 'impact' && e.skill) {
+      if (!selecting) skillImpact(e);                          // skill bar move: its own world effect
+      sfx('skill_' + e.skill, { name: e.name });
+    } else if (e.type === 'impact' && e.def.spell) {
+      if (!selecting) { if (MFX && knight.cls === 'mage') mageFx(e.def.spell === 'meteor' ? 'meteor' : 'fireball', e.def); else if (e.def.spell === 'meteor') summonMeteor(e.def); else launchFireball(e.def); }   // magefx: mage visuals
+      sfx(e.def.spell + '_cast', { name: e.name });
+    } else if (e.type === 'impact' && e.def.ranged) {
+      if (!selecting) fireArrows(e.def);                        // archer release: launch the projectile(s)
+      sfx('bow_release', { name: e.name });
+    } else if (e.type === 'impact') {
+      const d = e.def;
+      if (!e.connected) shake = Math.max(shake, (d.shake || 0) * 0.25);   // whiff: tiny weight cue only
+      if (d.slam) {
+        knight.bladeTipWorld(_p);
+        dust(_p.x, _p.z, 10, 2.4, 0.7);
+        _p.y = 0.1; sparks(_p, 0, 0, 6, 0.9);
+        sfx('ground_slam');
+      }
+    }
+  };
+
+  for (const k in heroes) heroes[k].onEvent = onHeroEvent;
+
+  /* ---------- arrows: drawn by ArcherVFX (vfx/core.js + vfx/archer.js: pooled arrows, trails, draw / release / impact /
+     rain / buff / hop effects). This page keeps aiming, hit tests and damage through the hooks below. Bench: archer-vfx.html ---------- */
+  let rangedAim = null;
+  let rangedTarget = null;                                      // creatures: the creature the current shot / aimed skill is fired at
+  const bodyPoint = (c, out) => (out || new THREE.Vector3()).set(c.x, Math.min(1.5, Math.max(0.3, c.D.height * 0.5)), c.z);
+  // projectile homing: turn the velocity toward the creature's body (keeps speed); false once the target is gone
+  const _hw = new THREE.Vector3(), _hv = new THREE.Vector3();
+  function homeToward(P, rate, dt) {
+    if (!P.home || !P.home.alive) { P.home = null; return false; }
+    const sp = P.vel.length(); if (sp < 1e-4) return false;
+    bodyPoint(P.home, _hw).sub(P.pos).normalize();
+    _hv.copy(P.vel).divideScalar(sp).lerp(_hw, Math.min(1, rate * dt)).normalize();
+    P.vel.copy(_hv).multiplyScalar(sp);
+    return true;
+  }
+  const mouseGround = new THREE.Vector3(), _seg = new THREE.Vector3();
+  let lastPointer = null;
+  function pickAim(e) {                                         // what is under the cursor: the dummy itself, else the ground
+    if (!e) return null;
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    if (ray.intersectObject(dummy.g, true).length) return new THREE.Vector3(dummy.g.position.x, 1.4, dummy.g.position.z);
+    const pc = overCreature(); if (pc) { rangedTarget = pc; return bodyPoint(pc); }   // creatures: aim at its body
+    return groundPoint(e) ? aimFrom(aimPoint) : null;
+  }
+  function aimFrom(point) {                                     // snap to the dummy when the click is near it
+    const t = dummy.g.position;
+    const nc = creatures && creatures.nearest(point.x, point.z, 1.2);       // creatures: snap to one near the click
+    if (nc && Math.hypot(point.x - nc.x, point.z - nc.z) < Math.hypot(point.x - t.x, point.z - t.z)) return new THREE.Vector3(nc.x, Math.min(1.4, nc.D.height * 0.55), nc.z);
+    if (Math.hypot(point.x - t.x, point.z - t.z) < 2.0) return new THREE.Vector3(t.x, 1.4, t.z);
+    return new THREE.Vector3(point.x, 1.4, point.z);
+  }
+  // the first thing an arrow head enters this frame (a -> b): target capsules (creatures, dummies, village targets), then
+  // village walls / props. The y = 0 ground is handled by ArcherVFX.
+  const _ar = new THREE.Ray(), _aa0 = new THREE.Vector3(), _aa1 = new THREE.Vector3(), _acp = new THREE.Vector3(), _aca = new THREE.Vector3(), _ad = new THREE.Vector3();
+  const VSURF = { fence: 'wood', props: 'wood' };               // village collider tags -> impact surface (everything else is stone)
+  function arrowHitTest(a, b, P) {
+    _ad.subVectors(b, a); const len = _ad.length(); if (len < 1e-6) return null; _ad.divideScalar(len);
+    _ar.set(a, _ad);
+    let best = null, bd = Infinity;
+    for (const tg of knight.hitTargets) {
+      if ((P.hitSet && P.hitSet.has(tg)) || (tg.alive && !tg.alive())) continue;
+      _aa0.set(tg.pos.x, tg.pos.y, tg.pos.z); _aa1.copy(_aa0); _aa1.y += tg.height || 2;
+      const r = tg.radius || 0.4, d2 = _ar.distanceSqToSegment(_aa0, _aa1, _acp, _aca), along = _acp.distanceTo(a);
+      if (d2 > r * r || along > len + 0.05 || along >= bd) continue;
+      bd = along;
+      const cr = isCreature(tg), point = _aca.clone().addScaledVector(_ad, -r * 0.6);
+      if (cr) point.y = Math.min(point.y, tg.bodyHeight * 0.7);
+      best = { point, target: tg, surface: cr ? 'flesh' : 'wood', attach: cr ? creatures.attachPoint(tg) : (tg.piv || dummy.piv), stick: cr && tg.bodyHeight < 0.9 ? 0.01 : 2.5 };   // creatures: small ones do not hold arrows
+    }
+    if (VW) { const wh = VW.projectileHit(a, b); if (wh && wh.point.distanceTo(a) < bd) best = { point: wh.point.clone(), surface: VSURF[wh.shape.tag] || 'stone', stick: 4 }; }   // village: walls, roofs, trunks, posts
+    return best;
+  }
+  const poisonAnchor = (tg) => ({ key: tg.id, pos: tg.pos, height: isCreature(tg) ? tg.bodyHeight : (tg.height || 2) * 0.9, radius: tg.radius || 0.4, alive: tg.alive });
+  const AV = ArcherVFX.create({
+    scene, camera, arrowTemplate: (heroes.archer || knight).makeArrowMesh(),
+    hooks: {
+      hitTest: arrowHitTest,
+      onHit(P, hit, pass) {                                     // damage, hit reactions, DoT (the look is ArcherVFX's)
+        const tg = hit.target; if (!tg || P.style === 'rain') return;   // rain damage lands per volley (onRainWave)
+        if (tg.id === 'dummy') dummyHit(P.dir.x, P.dir.z, Math.min(1.4, P.power * 0.7));
+        // at: the arrow's real contact point (Atherion HitAnchor.stash) - the hit fx start where the arrow went in
+        dealDamage(tg, P.power * (70 + Math.random() * 25), { cls: P.style === 'poison' ? 'poison' : '', at: hit.point, heavy: P.style === 'pierce' || P.style === 'fire' || P.style === 'poison' });
+        if (P.style === 'fire') dealDamage(tg, 60 + Math.random() * 20, { noCrit: true, y: 2.8, at: hit.point });
+        if (P.style === 'poison') { const D = { tg, n: 5, every: 1, t: 1, dmg: 42, cls: 'poison', anchor: poisonAnchor(tg) }; dots.push(D); AV.poison(D.anchor, 5); }
+        shake = Math.max(shake, pass ? 0.09 : 0.05); punch = Math.max(punch, 0.2);
+        sfx('arrow_hit');
+      },
+      targetsIn: (c, r) => knight.hitTargets.filter((tg) => (!tg.alive || tg.alive()) && Math.hypot(tg.pos.x - c.x, tg.pos.z - c.z) < r + (tg.radius || 0.4) * 0.5),
+      onRainWave(c, r) { areaDamage(c, r, 42, { y: 2.6 }); sfx('arrow_rain'); },
+      light(p, hex, k) { blastLight.color.setHex(hex); blastLight.position.copy(p).setY(Math.max(0.6, p.y)); blastI = Math.max(blastI, k); },
+      shake(s) { shake = Math.max(shake, s); },
+    },
+  });
+  if (heroes.archer) AV.bindArcher(heroes.archer);              // draw / charge glows read the archer's real bow; the back hop is tracked
+  window.__arrows = AV.projectiles;                             // (debug / tools: { m, pos, stuck } per flying or stuck arrow)
+  window.__archerVFX = AV;
+
+  /* ---------- impact: Atherion's hit feedback (vfx/impact.js: ember burst, impact mark, body flash, impact sparks, death burst)
+     and the EXP orb / level-up (vfx/progress.js). dealDamage calls impactHit for every ACCEPTED hit; a kill plays the death
+     burst and sends ONE orb that credits the kill's EXP when it reaches the hero. Spec: vfx/impact-spec.md ---------- */
+  const fxLight = (p, hex, k) => { blastLight.color.setHex(hex); blastLight.position.copy(p).setY(Math.max(0.6, p.y)); blastI = Math.max(blastI, k); };
+  const IFX = ImpactFX.create({ scene, camera, light: fxLight });
+  const PFX = ProgressFX.create({ scene, camera, light: fxLight });
+  window.__impact = IFX; window.__progress = PFX;
+  for (const k in heroes) IFX.bindFlash(heroes[k].root);          // the hero's own (red) hit flash
+  IFX.warm(renderer); PFX.warm(renderer);                          // compile the effect programs now, not on the first hit / kill
+  const FX_KIND = { warrior: 'blade', archer: 'arrow' };           // HitFxCode.kind_for_class: knight blade, archer arrow, mage none
+  const fxRoots = new WeakMap();
+  const fxRoot = (pos) => { let r = fxRoots.get(pos); if (!r) { r = { position: pos, rotation: { y: 0 } }; fxRoots.set(pos, r); } return r; };
+  function impactHit(tg, crit, opts, killed) {
+    const C = tg.creature, view = C && tg.entry ? tg.entry.view : null;
+    const kind = opts.cls === 'poison' && opts.noCrit ? null : FX_KIND[knight.cls] || null;    // DoT ticks: no directional sparks
+    const intent = opts.heavy !== undefined ? opts.heavy : !!opts.big;                         // knockdown intent: 3rd swing / skill
+    const heavy = intent && !killed && (!(C && C.D.boss) || Math.random() < 0.1);              // a killing blow never knocks down
+    const h = C ? C.D.height : (tg.bodyHeight || tg.height || 2), rad = C ? C.D.radius : (tg.radius || 0.4);
+    IFX.hit({ root: view ? view.root : tg.id === 'dummy' ? dummy.g : fxRoot(tg.pos), x: tg.pos.x, z: tg.pos.z,
+      r: IFX.bodyRadius(h), surf: Math.max(0.25, rad * 0.6), depth: rad + 0.1,
+      point: kind === 'blade' ? null : opts.at || null, from: knight.root.position, kind, heavy, crit,
+      flash: view ? (d, s) => view.flash(d, s) : null });
+  }
+  const ARROW_STYLE = { pierce: 'pierce', fire: 'fire', poison: 'poison', rapid: 'rapid' };
+  function fireArrows(def, kind, mul, extra) {
+    const L = knight.arrowLaunch(); if (!L) return;
+    const style = ARROW_STYLE[kind] || (def.volley > 1 ? 'volley' : 'basic'), St = AV.STYLES[style];
+    const C = rangedTarget && rangedTarget.alive ? rangedTarget : null;
+    let base;
+    if (C) {                                                    // creatures: straight into the body, not level over it
+      const aim = bodyPoint(C), t = Math.hypot(aim.x - L.pos.x, aim.z - L.pos.z) / St.speed;
+      aim.y += 0.5 * St.grav * t * t;                           // compensate the arrow's drop over its flight time
+      base = aim.sub(L.pos).normalize();
+    } else {
+      base = rangedAim ? rangedAim.clone().sub(L.pos) : new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+      base.y = 0; base.normalize();
+    }
+    AV.shoot(style, Object.assign({ pos: L.pos, dir: base, count: def.volley || 1, power: (def.power || 1) * (mul || 1), feet: knight.root.position, range: 18,
+      home: C && style !== 'pierce' ? { aim: (out) => (C.alive ? bodyPoint(C, out) : null) } : null }, extra || {}));   // creatures: the centre arrow homes in (Metin2-style lock-on)
+    shake = Math.max(shake, 0.02);
+  }
+
+  /* ---------- fire magic: additive flame sprites, fireball projectile, explosions, meteor + summoning circle ---------- */
+  const glowTex = (function () {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.25, 'rgba(255,255,255,0.7)'); gr.addColorStop(0.6, 'rgba(255,255,255,0.15)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  const flames = [], pools = { n: [], a: [] }, poolIdx = { n: 0, a: 0 };
+  for (let i = 0; i < 380; i++) {
+    const add = i >= 240;                                        // 240 normal-blended bodies, 140 additive hot bits
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending }));
+    m.visible = false; m.renderOrder = add ? 22 : 20; scene.add(m);
+    const f = { m, v: new THREE.Vector3(), life: 0, max: 1, size: 0.2, grow: 1, c0: new THREE.Color(), c1: new THREE.Color(), lift: 0, drag: 0, a: 1 };
+    flames.push(f); pools[add ? 'a' : 'n'].push(f);
+  }
+  // one flame / ember puff: colour goes hot (c0) -> cool (c1), size grows, fades out; lift > 0 rises, < 0 falls.
+  // add = additive (flash, cores, embers); default = normal blending (flame bodies that must stay orange/red)
+  function flame(pos, vel, life, size, grow, c0, c1, lift, drag, a, add) {
+    const k = add ? 'a' : 'n', P = pools[k];
+    poolIdx[k] = (poolIdx[k] + 1) % P.length;
+    const f = P[poolIdx[k]];
+    f.m.position.copy(pos); f.v.copy(vel); f.life = f.max = life; f.size = size; f.grow = grow;
+    f.c0.setHex(c0); f.c1.setHex(c1); f.lift = lift || 0; f.drag = drag || 0; f.a = a === undefined ? 1 : a;
+    f.m.material.rotation = Math.random() * 6.28; f.m.visible = true;
+  }
+  function updateFlames(dt) {
+    for (const f of flames) {
+      if (f.life <= 0) continue;
+      f.life -= dt;
+      if (f.life <= 0) { f.m.visible = false; continue; }
+      f.v.multiplyScalar(Math.exp(-f.drag * dt)); f.v.y += f.lift * dt;
+      f.m.position.addScaledVector(f.v, dt);
+      const u = 1 - f.life / f.max;
+      f.m.scale.setScalar(f.size * (1 + f.grow * u));
+      f.m.material.color.copy(f.c0).lerp(f.c1, Math.min(1, u * 1.5));
+      f.m.material.opacity = f.a * (u < 0.08 ? u / 0.08 : Math.pow(1 - (u - 0.08) / 0.92, 1.4));
+    }
+  }
+  const rnd = (a) => (Math.random() * 2 - 1) * a, _mv = new THREE.Vector3(), _mq = new THREE.Vector3();
+  const randDir = (out) => { do { out.set(rnd(1), rnd(1), rnd(1)); } while (out.lengthSq() > 1 || out.lengthSq() < 0.01); return out.normalize(); };
+  // lights exist from the start (adding lights later recompiles every material); intensity 0 = off
+  const boltLight = new THREE.PointLight(0xff8a3a, 0, 8, 2); scene.add(boltLight);
+  const blastLight = new THREE.PointLight(0xffa050, 0, 12, 2); scene.add(blastLight);
+  let blastI = 0;
+  const glowSprite = (color, size, a, add) => {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, opacity: a === undefined ? 1 : a, depthWrite: false, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending }));
+    m.scale.setScalar(size); m.renderOrder = 21; return m;
+  };
+  // ground decals: shockwave ring (additive) and scorch mark (dark, fades slowly)
+  const decals = [];
+  const ringGeo = new THREE.RingGeometry(0.8, 1, 64);
+  function shockwave(point, radius) {
+    const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffb35a, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+    m.rotation.x = -Math.PI / 2; m.position.set(point.x, 0.05, point.z); scene.add(m);
+    decals.push({ m, t: 0, life: 0.5, kind: 'ring', radius });
+  }
+  function scorch(point, radius) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x000000, transparent: true, opacity: 0.75, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2; m.position.set(point.x, 0.015, point.z); m.scale.setScalar(radius * 2.2); scene.add(m);
+    const e = glowSprite(0xff5a10, radius * 1.4, 0.7); e.position.set(point.x, 0.12, point.z); scene.add(e);   // embers glowing in the crater (normal blend: stays orange)
+    decals.push({ m, e, t: 0, life: 4.5, kind: 'scorch', radius });
+  }
+  function updateDecals(dt) {
+    for (let i = decals.length - 1; i >= 0; i--) {
+      const d = decals[i]; d.t += dt; const u = d.t / d.life;
+      if (u >= 1) { scene.remove(d.m); d.m.material.dispose(); if (d.kind === 'scorch') d.m.geometry.dispose(); if (d.e) { scene.remove(d.e); d.e.material.dispose(); } decals.splice(i, 1); continue; }
+      if (d.kind === 'ring') { const e = 1 - Math.pow(1 - u, 3); d.m.scale.setScalar(0.3 + d.radius * e); d.m.material.opacity = (1 - u) * 0.75; }
+      else { d.m.material.opacity = 0.75 * (u < 0.7 ? 1 : (1 - u) / 0.3); if (d.e) d.e.material.opacity = 0.7 * Math.max(0, 1 - u * 2.2) * (0.8 + 0.2 * Math.sin(d.t * 17)); }
+    }
+  }
+  // EXPLOSION: white flash, blossoming fire, flying embers, rising smoke, sparks, light flash, camera kick
+  const PALS = {
+    fire: { f0: 0xfff4d0, f1: 0xff9a40, b0: 0xffd060, b1: 0xe0400c, c0: 0xffc848, c1: 0xc0280a, h0: 0xfff0c0, h1: 0xff8020, e0: 0xfff0c0, e1: 0xff5000, sm: 0x3b322e },
+    ice: { f0: 0xf4fbff, f1: 0x9fd8ff, b0: 0xd8f2ff, b1: 0x3a7ad8, c0: 0xc6ecff, c1: 0x2a64c0, h0: 0xffffff, h1: 0x9fd8ff, e0: 0xffffff, e1: 0x6fb8ff, sm: 0xb8cfe4 },
+    dust: { f0: 0xfff0d0, f1: 0xd0b080, b0: 0xd8c090, b1: 0x6a5030, c0: 0xcab08a, c1: 0x5a4228, h0: 0xfff0d0, h1: 0xc0a070, e0: 0xe8d8b8, e1: 0x7a6040, sm: 0x8a7a64 },
+  };
+  function explode(point, size, opts) {
+    opts = opts || {};
+    const P = PALS[opts.pal || 'fire'];
+    flame(point, _mv.set(0, 0, 0), 0.15, 0.9 * size, 1.2, P.f0, P.f1, 0, 0, 0.9, true);
+    flame(point, _mv.set(0, 0, 0), 0.3, 1.0 * size, 1.0, P.b0, P.b1, 0, 0, 1);
+    for (let i = 0, n = Math.round(24 * size); i < n; i++) {
+      randDir(_mq); _mq.y = Math.abs(_mq.y) * 0.8 + 0.1;
+      flame(point, _mv.copy(_mq).multiplyScalar((2.2 + Math.random() * 3.6) * size), 0.38 + Math.random() * 0.4, (0.28 + Math.random() * 0.22) * size, 1.6, P.c0, P.c1, 1.8, 3.4, 0.95);
+      if (i % 3 === 0) flame(point, _mv.copy(_mq).multiplyScalar((1.5 + Math.random() * 2) * size), 0.25, 0.22 * size, 1.4, P.h0, P.h1, 1, 3, 0.7, true);
+    }
+    for (let i = 0, n = Math.round(16 * size); i < n; i++) {
+      randDir(_mq); _mq.y = Math.abs(_mq.y) + 0.3;
+      flame(point, _mv.copy(_mq).multiplyScalar((3.5 + Math.random() * 5) * size), 0.6 + Math.random() * 0.6, 0.055, 0, P.e0, P.e1, -8, 0.5, 1, true);
+    }
+    for (let i = 0, n = Math.round(7 * size); i < n; i++) {
+      _mq.set(point.x + rnd(0.4 * size), point.y + Math.random() * 0.4, point.z + rnd(0.4 * size));
+      spawn(_mq, _mv.set(rnd(0.7), 0.7 + Math.random() * 0.9, rnd(0.7)), 1.1 + Math.random() * 0.7, 0.3 * size, P.sm, 0.5, 2.6, 0.32);
+    }
+    sparks(point, 0, 0, Math.round(8 * size), 1.1);
+    blastLight.position.copy(point); blastLight.position.y += 0.6; blastI = Math.max(blastI, 3.2 * size);
+    shake = Math.max(shake, 0.06 * size); punch = Math.max(punch, Math.min(1, 0.22 * size));
+    if (opts.ring) shockwave(point, opts.ring);
+    if (opts.scorch) scorch(point, opts.scorch);
+  }
+  // FIREBALL: launched from the staff orb at the aim point, burning trail, swept hit test, explodes on contact / ground
+  const fireballs = []; window.__fireballs = fireballs;           // (debug / tools, like __arrows)
+  function launchFireball(def, kind) {
+    const ICE = kind === 'ice';
+    const L = knight.staffLaunch(); if (!L) return;
+    const C = rangedTarget && rangedTarget.alive ? rangedTarget : null;
+    const tgt = C ? bodyPoint(C) : rangedAim ? rangedAim.clone() : L.pos.clone().add(_mv.set(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(10));
+    if (!C) tgt.y = 1.25;                                       // creatures: aim INTO the body (also downward at small ones)
+    const d = tgt.sub(L.pos); if (!C) d.y = Math.max(-0.15 * Math.hypot(d.x, d.z), d.y); d.normalize();
+    const g = new THREE.Group(), core = glowSprite(ICE ? 0xf4fbff : 0xfff2c8, 0.36, 1, true), mid = glowSprite(ICE ? 0x8fd4ff : 0xffa030, 0.72, 0.95), outer = glowSprite(ICE ? 0x2f7ae0 : 0xe8400c, 1.15, 0.5);
+    g.add(outer, mid, core); g.position.copy(L.pos); scene.add(g);
+    if (ICE) {                                                  // the lance itself: a long crystal along the flight
+      const sh = new THREE.Mesh(new THREE.OctahedronGeometry(0.16, 0), new THREE.MeshStandardMaterial({ color: 0xd8f2ff, emissive: 0x3a8ae0, emissiveIntensity: 0.8, roughness: 0.1, metalness: 0.2, flatShading: true, transparent: true, opacity: 0.92 }));
+      sh.scale.set(0.7, 0.7, 4.2); sh.lookAt(d); g.add(sh);
+    }
+    fireballs.push({ g, core, mid, outer, pos: L.pos.clone(), vel: d.multiplyScalar(ICE ? 30 : 19), life: 0, power: def.power || 1, kind: kind || 'fire', mul: ICE ? 1.4 : 1, home: C });
+    for (let i = 0; i < 12; i++) flame(L.pos, randDir(_mq).multiplyScalar(1.6), 0.28, 0.18, 1.4, ICE ? 0xd0f0ff : 0xffc040, ICE ? 0x2a64c0 : 0xd0300a, 0.5, 4, 0.9);   // muzzle burst
+    for (let i = 0; i < 6; i++) flame(L.pos, randDir(_mq).multiplyScalar(3), 0.35, 0.04, 0, 0xfff0c0, 0xff6000, -4, 0.8, 1, true);
+    shake = Math.max(shake, 0.025);
+  }
+  function hitTargetsAlong(p0, p1, rad) {                       // first target capsule the segment p0 -> p1 enters
+    const dir = _mq.copy(p1).sub(p0), len = dir.length(); if (len < 1e-6) return null;
+    const ray = new THREE.Ray(p0, dir.clone().divideScalar(len));
+    for (const tg of knight.hitTargets) {
+      const a0 = new THREE.Vector3(tg.pos.x, tg.pos.y, tg.pos.z), a1 = a0.clone(); a1.y += tg.height || 2;
+      const cp = new THREE.Vector3(), ca = new THREE.Vector3(), r = (tg.radius || 0.4) + rad;
+      if (ray.distanceSqToSegment(a0, a1, cp, ca) <= r * r && cp.distanceTo(p0) <= len + 0.05) return { tg, point: cp };
+    }
+    return null;
+  }
+  function updateFireballs(dt) {
+    let light = 0;
+    for (let i = fireballs.length - 1; i >= 0; i--) {
+      const F = fireballs[i];
+      F.life += dt;
+      const p0 = F.pos.clone();
+      homeToward(F, 9, dt);                                     // creatures: the fireball curves into a moving target
+      F.pos.addScaledVector(F.vel, dt); F.g.position.copy(F.pos);
+      const fl = Math.random();
+      F.core.scale.setScalar(0.32 + fl * 0.07); F.mid.scale.setScalar(0.7 + Math.sin(F.life * 40) * 0.07); F.outer.material.rotation += dt * 6;
+      for (let k = 0; k < 4; k++) {                              // burning trail, spread over the frame's path
+        _mq.copy(p0).lerp(F.pos, k / 4).add(_mv.set(rnd(0.06), rnd(0.06), rnd(0.06)));
+        if (F.kind === 'ice') flame(_mq, _mv.copy(F.vel).multiplyScalar(-0.02).add(randDir(new THREE.Vector3()).multiplyScalar(0.3)), 0.3 + Math.random() * 0.2, 0.16, 0.8, 0xe4f6ff, 0x3a7ad8, -0.5, 2.5, 0.8);
+        else flame(_mq, _mv.copy(F.vel).multiplyScalar(-0.04).add(randDir(new THREE.Vector3()).multiplyScalar(0.5)), 0.32 + Math.random() * 0.22, 0.26, 1.1, 0xffb438, 0xb8260a, 1.4, 2.5, 0.85);
+      }
+      if (Math.random() < 0.5) flame(F.pos, randDir(_mq).multiplyScalar(2).add(_mv.set(0, 1, 0)), 0.5, 0.05, 0, F.kind === 'ice' ? 0xffffff : 0xfff0c0, F.kind === 'ice' ? 0x8fd4ff : 0xff5000, -6, 0.6, 1, true);
+      if (F.kind !== 'ice' && Math.random() < 0.25) spawn(F.pos, _mv.set(rnd(0.2), 0.5, rnd(0.2)), 0.8, 0.16, 0x2f2826, 0.4, 2.2, 0.2);
+      light = Math.max(light, 2.6 + fl * 0.8); boltLight.position.copy(F.pos);
+      const hit = hitTargetsAlong(p0, F.pos, 0.2);
+      let boom = null;
+      if (hit) {
+        boom = hit.point;
+        const dir = F.vel.clone().normalize();
+        if (hit.tg.id === 'dummy') dummyHit(dir.x, dir.z, F.power * 1.1);
+        dealDamage(hit.tg, F.power * F.mul * (95 + Math.random() * 35), { cls: F.kind === 'ice' ? 'ice' : '', at: hit.point });
+        sfx('fireball_hit');
+      } else if (VW && VW.projectileHit(p0, F.pos)) boom = F.pos.clone();
+      else if (F.pos.y < 0.12) boom = F.pos.clone().setY(0.15);
+      else if (F.life > 1.3) { boom = F.pos.clone(); }
+      if (boom) {
+        explode(boom, hit ? 1.0 : 0.6, { ring: hit ? 0 : 1.2, pal: F.kind === 'ice' ? 'ice' : 'fire' });
+        scene.remove(F.g); F.g.traverse((c) => c.material && c.material.dispose()); fireballs.splice(i, 1);
+      }
+    }
+    boltLight.intensity = light;
+  }
+  // SUMMONING CIRCLE (procedural canvas runes) at the meteor's target, then the METEOR falls from the sky onto it
+  const circleTex = (function () {
+    const c = document.createElement('canvas'); c.width = c.height = 512;
+    const g = c.getContext('2d'); g.translate(256, 256); g.strokeStyle = '#fff'; g.fillStyle = '#fff'; g.lineCap = 'round';
+    const ring = (r, w) => { g.lineWidth = w; g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.stroke(); };
+    ring(244, 7); ring(226, 3); ring(176, 4); ring(92, 3); ring(70, 2);
+    let seed = 7; const R = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 28; i++) {                                // rune band: little glyphs of strokes between the outer rings
+      g.save(); g.rotate(i / 28 * Math.PI * 2); g.translate(0, -203); g.lineWidth = 3;
+      for (let k = 0; k < 3; k++) { g.beginPath(); g.moveTo((R() - 0.5) * 18, (R() - 0.5) * 22); g.lineTo((R() - 0.5) * 18, (R() - 0.5) * 22); g.stroke(); }
+      if (R() < 0.5) { g.beginPath(); g.arc((R() - 0.5) * 10, (R() - 0.5) * 10, 3, 0, Math.PI * 2); g.fill(); }
+      g.restore();
+    }
+    g.lineWidth = 4;                                              // hexagram
+    for (const o of [0, Math.PI / 3]) {
+      g.beginPath();
+      for (let k = 0; k <= 3; k++) { const a = o + k * 2 * Math.PI / 3 - Math.PI / 2; g[k ? 'lineTo' : 'moveTo'](Math.cos(a) * 176, Math.sin(a) * 176); }
+      g.stroke();
+    }
+    for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 - Math.PI / 2; g.beginPath(); g.arc(Math.cos(a) * 176, Math.sin(a) * 176, 12, 0, Math.PI * 2); g.stroke(); }
+    for (let k = 0; k < 12; k++) { const a = k * Math.PI / 6; g.lineWidth = 2; g.beginPath(); g.moveTo(Math.cos(a) * 70, Math.sin(a) * 70); g.lineTo(Math.cos(a) * 92, Math.sin(a) * 92); g.stroke(); }
+    return new THREE.CanvasTexture(c);
+  })();
+  const circles = [];
+  let meteorCircle = null;
+  const METEOR_R = 2.8, METEOR_RANGE = 13;
+  function meteorPoint() {                                      // ground point under the aim, clamped to the cast range
+    const kp = knight.root.position, t = rangedAim ? rangedAim.clone() : kp.clone().add(_mv.set(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(6));
+    t.y = 0; const d = t.clone().sub(kp); d.y = 0;
+    if (d.length() > METEOR_RANGE) t.copy(kp).addScaledVector(d.normalize(), METEOR_RANGE).setY(0);
+    return t;
+  }
+  function spawnCircle(point, R, cOut, cIn) {
+    R = R || METEOR_R;
+    const mk = (scale, color) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: circleTex, color, transparent: true, opacity: 0, depthWrite: false }));
+      m.rotation.x = -Math.PI / 2; m.position.set(point.x, 0.03, point.z); m.scale.setScalar(scale); scene.add(m); return m;
+    };
+    const C = { point: point.clone(), R, col: cIn || 0xffc050, outer: mk(R * 2.1, cOut || 0xff6a1a), inner: mk(R * 1.15, cIn || 0xffb030), t: 0, fade: -1 };
+    circles.push(C); return C;
+  }
+  function updateCircles(dt) {
+    for (let i = circles.length - 1; i >= 0; i--) {
+      const C = circles[i]; C.t += dt;
+      if (C.fade < 0 && C.t > 2.6) C.fade = 0;                   // never answered (cast interrupted): fade away
+      const appear = Math.min(1, C.t / 0.3), grow = 1 - Math.pow(1 - appear, 3);
+      let a = appear;
+      if (C.fade >= 0) { C.fade += dt; a = Math.max(0, 1 - C.fade / 0.45); }
+      C.outer.rotation.z += dt * 0.6; C.inner.rotation.z -= dt * 1.1;
+      C.outer.scale.setScalar(C.R * 2.1 * (0.6 + 0.4 * grow)); C.inner.scale.setScalar(C.R * 1.15 * (0.4 + 0.6 * grow) * (C.fade >= 0 ? 1 + C.fade * 1.5 : 1));
+      const pulse = 0.85 + 0.15 * Math.sin(C.t * 9);
+      C.outer.material.opacity = a * 0.85 * pulse; C.inner.material.opacity = a * 0.7 * pulse;
+      if (C.fade < 0 && Math.random() < 0.6) {                     // embers rising off the circle
+        const r = Math.random() * C.R, ang = Math.random() * 6.28;
+        flame(_mq.set(C.point.x + Math.cos(ang) * r, 0.05, C.point.z + Math.sin(ang) * r), _mv.set(0, 0.8 + Math.random(), 0), 0.8, 0.07, 0.5, C.col, 0x6a3008, 0.5, 0.5, 0.95);
+      }
+      if (C.fade >= 0.45) { scene.remove(C.outer, C.inner); for (const m of [C.outer, C.inner]) { m.geometry.dispose(); m.material.dispose(); } circles.splice(i, 1); }
+    }
+  }
+  const meteors = [];
+  function summonMeteor(def, at, opts) {
+    opts = opts || {};
+    let circle = null;
+    if (!at) { circle = meteorCircle || spawnCircle(meteorPoint()); meteorCircle = null; }
+    const to = (at || circle.point).clone().setY(0.25);
+    const back = to.clone().sub(knight.root.position).setY(0); if (back.lengthSq() < 1e-4) back.set(Math.sin(yaw), 0, Math.cos(yaw)); back.normalize();
+    const from = to.clone().addScaledVector(back, -6).add(_mv.set(0, 17, 0));   // falls in from high behind the caster
+    const geo = new THREE.IcosahedronGeometry(0.5, 1), pa = geo.attributes.position;
+    for (let k = 0; k < pa.count; k++) { const f = 0.8 + Math.random() * 0.35; pa.setXYZ(k, pa.getX(k) * f, pa.getY(k) * f, pa.getZ(k) * f); }
+    geo.computeVertexNormals();
+    const rock = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x2b211d, emissive: 0xff4a10, emissiveIntensity: 0.9, roughness: 0.9, flatShading: true }));
+    const g = new THREE.Group(); g.add(rock, glowSprite(0xffa030, 1.7, 0.75), glowSprite(0xd8380a, 3.0, 0.4), glowSprite(0xfff0c0, 0.9, 0.8, true)); g.position.copy(from); scene.add(g);
+    const sz = opts.size || 1; g.scale.setScalar(sz);
+    meteors.push({ g, rock, from, to, pos: from.clone(), t: 0, dur: 0.6, power: (def.power || 1.5) * (opts.mul || 1), circle, size: sz });
+  }
+  function updateMeteors(dt) {
+    let light = 0;
+    for (let i = meteors.length - 1; i >= 0; i--) {
+      const Mt = meteors[i]; Mt.t += dt;
+      const u = Math.min(1, Mt.t / Mt.dur), e = u * u * (0.4 + 0.6 * u);   // accelerates into the ground
+      const p0 = Mt.pos.clone();
+      Mt.pos.copy(Mt.from).lerp(Mt.to, e); Mt.g.position.copy(Mt.pos);
+      Mt.rock.rotation.x += dt * 7; Mt.rock.rotation.y += dt * 4;
+      for (let k = 0; k < 7; k++) {                              // thick burning tail + smoke
+        _mq.copy(p0).lerp(Mt.pos, k / 7).add(_mv.set(rnd(0.25), rnd(0.25), rnd(0.25)));
+        flame(_mq, randDir(new THREE.Vector3()).multiplyScalar(0.8), 0.45 + Math.random() * 0.3, 0.5, 1.2, 0xffb840, 0xb02008, 1.5, 2, 0.9);
+      }
+      for (let k = 0; k < 2; k++) spawn(Mt.pos, _mv.set(rnd(0.4), 0.6, rnd(0.4)), 1.3, 0.4, 0x2c2522, 0.3, 2.4, 0.3);
+      light = 5; boltLight.position.copy(Mt.pos);
+      if (u >= 1) {
+        const P = Mt.to.clone().setY(0.3);
+        const SZ = Mt.size, RR = METEOR_R * SZ;
+        explode(P, 2.3 * SZ, { ring: RR * 1.5, scorch: RR * 0.75 });
+        dust(P.x, P.z, 14, 3.2, 0.9);
+        for (let k = 0; k < 18; k++) {                           // ring of fire racing out along the ground
+          const a = k / 18 * Math.PI * 2;
+          flame(_mq.set(P.x, 0.2, P.z), _mv.set(Math.cos(a) * 9, 0.4, Math.sin(a) * 9), 0.45, 0.42, 1.2, 0xffb840, 0xc02c08, 0.6, 5, 0.9);
+        }
+        for (const tg of knight.hitTargets) {                   // area damage
+          const dx = tg.pos.x - P.x, dz = tg.pos.z - P.z, dist = Math.hypot(dx, dz);
+          if (dist > RR + (tg.radius || 0.4)) continue;
+          const fall = 1 - 0.45 * Math.min(1, dist / RR);
+          if (tg.id === 'dummy') dummyHit(dist > 0.05 ? dx / dist : 1, dist > 0.05 ? dz / dist : 0, 1.8 * fall);
+          dealDamage(tg, Mt.power * fall * (150 + Math.random() * 40), { big: true, y: 2.6 });
+        }
+        shake = Math.max(shake, 0.4 * Math.max(0.6, SZ)); punch = 1;
+        sfx('meteor_impact');
+        if (Mt.circle) Mt.circle.fade = Math.max(Mt.circle.fade, 0);
+        scene.remove(Mt.g); Mt.rock.geometry.dispose(); Mt.g.traverse((c) => c.material && c.material.dispose()); meteors.splice(i, 1);
+      }
+    }
+    if (light) boltLight.intensity = Math.max(boltLight.intensity, light);
+  }
+  function updateMagic(dt) {
+    updateFireballs(dt); updateMeteors(dt); updateCircles(dt); updateFlames(dt); updateDecals(dt);
+    blastI *= Math.exp(-dt * 9); blastLight.intensity = blastI;
+  }
+
+  /* ---------- magefx: the mage's spell VFX (magefx/*.js, bench: magefx.html). Gameplay stays HERE (aim, hit tests,
+     damage, movement) and is handed to MageFX as callbacks that fire at the visual moment: projectile contact, meteor
+     impact, the nova ring reaching a target, pillar ticks. ?mfx=0 = the old effects (comparison), ?fxq=low|medium|high ---------- */
+  const MFX = (!debugAnim && window.MageFX && heroes.mage && q.get('mfx') !== '0') ? MageFX.create({ scene, camera, renderer, quality: q.get('fxq') || 'high',
+    lights: [boltLight, blastLight],                              // shared with the legacy effects: no extra lights, no shader recompiles
+    feel: (s, p) => { shake = Math.max(shake, s); punch = Math.max(punch, p); } }) : null;
+  window.__mfx = MFX;
+  if (MFX) { if (heroes.mage) MFX.attach(heroes.mage); window.__fireballs = MFX.projectiles; }   // tools sample live projectiles there
+  const MAGE_FX = new Set(['fireball', 'meteor', 'nova', 'ice', 'bolt', 'pillar', 'blink', 'mshield', 'storm']);
+  function blinkDest() {                                          // where Işınlanma lands (unchanged rules: 8 m, walls, the dummy)
+    const from = knight.root.position.clone().setY(0), fwd = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    const d = (rangedAim ? rangedAim.clone().setY(0) : from.clone().addScaledVector(fwd, 6)).sub(from); d.y = 0;
+    if (d.length() > 8) d.setLength(8);
+    const to = VW ? VW.clampMove(from, from.clone().add(d)) : from.clone().add(d);
+    const dd = Math.hypot(to.x - dummy.g.position.x, to.z - dummy.g.position.z);
+    if (dd < 1.2) to.add(new THREE.Vector3(to.x - dummy.g.position.x, 0, to.z - dummy.g.position.z).normalize().multiplyScalar(1.2 - dd));
+    return to;
+  }
+  function areaHits(center, radius, fn) {                         // every hit target whose capsule touches the circle: fn(tg, dist, dirX, dirZ)
+    for (const tg of knight.hitTargets) {
+      const dx = tg.pos.x - center.x, dz = tg.pos.z - center.z, dist = Math.hypot(dx, dz);
+      if (dist > radius + (tg.radius || 0.4)) continue;
+      fn(tg, dist, dist > 0.05 ? dx / dist : 1, dist > 0.05 ? dz / dist : 0);
+    }
+  }
+  function meteorBlast(P, RR, power) {                            // the old meteor falloff: full damage at the centre, 55% at the rim
+    areaHits(P, RR, (tg, dist, dx, dz) => {
+      const fall = 1 - 0.45 * Math.min(1, dist / RR);
+      if (tg.id === 'dummy') dummyHit(dx, dz, 1.8 * fall);
+      dealDamage(tg, power * fall * (150 + Math.random() * 40), { big: true, y: 2.6, at: P });
+    });
+    sfx('meteor_impact');
+  }
+  function mageFx(id, def) {                                      // true when MageFX handled the spell
+    if (!MAGE_FX.has(id)) return false;
+    const kp = knight.root.position;
+    const takeTele = () => { const t = id === 'meteor' ? meteorCircle : skillCircle; if (id === 'meteor') meteorCircle = null; else skillCircle = null; return t && t.finish ? t : null; };
+    switch (id) {
+      case 'fireball': case 'ice': {
+        const L = knight.staffLaunch(); if (!L) return true;
+        const ICE = id === 'ice', power = def.power || 1, C = rangedTarget && rangedTarget.alive ? rangedTarget : null;
+        const tgt = C ? bodyPoint(C) : rangedAim ? rangedAim.clone() : L.pos.clone().add(_mv.set(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(10));
+        if (!C) tgt.y = 1.25;                                     // aim INTO the body (also downward at small creatures)
+        const d = tgt.sub(L.pos); if (!C) d.y = Math.max(-0.15 * Math.hypot(d.x, d.z), d.y); d.normalize();
+        MFX.release(id, { from: L.pos, dir: d, range: MFX.tuning[id].speed * 1.3,
+          home: C ? () => (C.alive ? bodyPoint(C) : null) : null,   // creatures: curves into a moving target
+          step: (p0, p1) => { const h = hitTargetsAlong(p0, p1, 0.2); if (h) return { point: h.point.clone(), tg: h.tg }; return VW && VW.projectileHit(p0, p1) ? { point: p1.clone(), env: true } : null; },
+          onHit: (hit, dir) => {
+            if (!hit.tg) return;
+            if (hit.tg.id === 'dummy') dummyHit(dir.x, dir.z, power * 1.1);
+            dealDamage(hit.tg, power * (ICE ? 1.4 : 1) * (95 + Math.random() * 35), { cls: ICE ? 'ice' : '', at: hit.point });
+            sfx('fireball_hit');
+          } });
+        shake = Math.max(shake, 0.025);
+        return true;
+      }
+      case 'meteor': case 'storm': {
+        const tele = takeTele(), power = (def.power || 1.5) * (id === 'storm' ? 0.65 : 1);
+        MFX.release(id, { point: tele ? tele.point : meteorPoint(), radius: id === 'storm' ? 4.2 : METEOR_R, telegraph: tele, onImpact: (i) => meteorBlast(i.point, i.radius, power) });
+        return true;
+      }
+      case 'nova': {                                              // damage lands when the flame ring actually reaches each target
+        const c = kp.clone().setY(0), R = 4.5, done = new Set();
+        MFX.release('nova', { center: c, radius: R, onSweep: (r0, r1) => areaHits(c, r1, (tg, dist, dx, dz) => {
+          if (done.has(tg)) return; done.add(tg);
+          const fall = 1 - 0.4 * Math.min(1, dist / R);
+          if (tg.id === 'dummy') dummyHit(dx, dz, 1.2 * fall);
+          dealDamage(tg, 140 * fall, { big: true, at: c });
+        }) });
+        return true;
+      }
+      case 'bolt': {
+        const tele = takeTele();
+        MFX.release('bolt', { point: tele ? tele.point : meteorPoint(), radius: 1.6, telegraph: tele, onImpact: (i) => areaDamage(i.point, 1.6, 260, { big: true, cls: 'ice' }) });
+        return true;
+      }
+      case 'pillar': {
+        const tele = takeTele();
+        MFX.release('pillar', { point: tele ? tele.point : meteorPoint(), radius: 1.3, telegraph: tele, onTick: (i) => areaDamage(i.point, 1.3, 70, { noCrit: true, y: 2.6 }) });
+        return true;
+      }
+      case 'blink': {
+        const tele = takeTele(), from = kp.clone().setY(0), to = blinkDest();
+        knight.root.position.copy(to);
+        MFX.release('blink', { from, to, telegraph: tele });
+        return true;
+      }
+      case 'mshield':
+        addBuff('shield');
+        MFX.release('mshield', { follow: knight.root, state: () => ({ active: !!(hero && hero.buffs.shield) && hero.absorb > 0, frac: hero ? hero.absorb / 700 : 0 }) });
+        return true;
+    }
+    return false;
+  }
+
+  /* =====================================================================================================
+   *  HUD + SKILLS: unit frame (portrait, level, HP / MP, buffs), target frame, 8-slot skill bar with cooldown sweeps,
+   *  mana costs, tooltips, EXP bar. Every class has 8 skills = body animation (knight profile + play rate) + world
+   *  effect fired on the animation's contact event (e.skill) + cost / cooldown / buffs. Icons are drawn as SVG here.
+   * ===================================================================================================== */
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  let iconN = 0;
+  const S_ = (d, w) => '<path d="' + d + '" fill="none" stroke="#1a0e06" stroke-width="' + ((w || 4) + 3) + '" stroke-linecap="round" stroke-linejoin="round"/>' +
+                      '<path d="' + d + '" fill="none" stroke="url(#GRAD)" stroke-width="' + (w || 4) + '" stroke-linecap="round" stroke-linejoin="round"/>';
+  const at = (tx, ty, rot, sc, body) => '<g transform="translate(' + (32 + tx) + ' ' + (32 + ty) + ') rotate(' + rot + ') scale(' + sc + ') translate(-32 -32)">' + body + '</g>';
+  const SWORD = '<path d="M29.6 10 L32 3 L34.4 10 L34.8 40 L29.2 40 Z"/><rect x="22" y="40" width="20" height="4.5" rx="2"/><rect x="30" y="44.5" width="4" height="10" rx="1"/><circle cx="32" cy="57.5" r="3.2"/>';
+  const ARROW = '<path d="M32 3 L39 15 L25 15 Z"/><rect x="30.6" y="14" width="2.8" height="37"/><path d="M30.6 45 L23 57 L30.6 53 Z M33.4 45 L41 57 L33.4 53 Z"/>';
+  const FLAME = '<path d="M32 5 C40 17 48 24 46 38 C44.5 50 37 57 32 57 C25 57 18 50 18 40 C18 31 24 27 25 16 C29 21 31 25 32 5 Z"/><path d="M32 30 C36 36 38.5 40 37.5 45.5 C36.5 50.5 34 52.5 32 52.5 C29 52.5 26.5 49.5 26.5 45.5 C26.5 40 31 37 32 30 Z" fill="#ff8a2a"/>';
+  const ROCK = '<path d="M12 40 L16 30 L26 27 L34 32 L36 43 L30 52 L18 53 Z"/><path d="M18 38 L25 36 L28 44" fill="none" stroke="#1a0e06" stroke-width="1.6"/>';
+  const GLYPH = {
+    whirl: S_('M32 30 a3 3 0 1 1 -3 4 a8 8 0 0 1 11 -9 a13 13 0 0 1 4 18 a18 18 0 0 1 -24 4 a22 22 0 0 1 -3 -28', 4.2) + at(14, -14, 45, 0.42, SWORD),
+    dash: at(6, 0, 90, 0.95, SWORD) + S_('M5 22 L17 22 M3 32 L13 32 M5 42 L17 42', 3),
+    quake: at(0, -8, 180, 0.72, SWORD) + S_('M5 54 L17 49 L24 57 L32 50 L40 58 L48 50 L59 54', 3) + S_('M22 46 L16 40 M42 46 L48 40', 2.4),
+    wave: '<path d="M8 52 C11 24 33 9 58 12 C40 18 24 31 17 55 Z"/>' + S_('M30 50 C34 38 42 30 54 26', 2),
+    leap: S_('M8 54 C10 22 36 8 50 24', 3.4) + '<path d="M54 30 L45 19 L57 19 Z"/>' + S_('M44 56 L60 56', 3) + '<path d="M52 44 L54 50 L60 50 L55 54 L57 60 L52 56 L47 60 L49 54 L44 50 L50 50 Z"/>',
+    spin: S_('M13 34 A19 19 0 0 1 45 18', 4) + '<path d="M51 12 L50 27 L39 20 Z"/>' + S_('M51 30 A19 19 0 0 1 19 46', 4) + '<path d="M13 52 L14 37 L25 44 Z"/>' + at(0, 0, 45, 0.45, SWORD),
+    cry: '<path d="M10 33 C10 22 17 15 25 15 C33 15 37 22 37 30 L41 36 L36 38 L36 44 C36 48 33 50 28 50 L24 50 L24 56 L12 56 L13 46 C11 42 10 38 10 33 Z"/>' + S_('M44 22 A14 14 0 0 1 44 42', 3) + S_('M51 15 A22 22 0 0 1 51 49', 3),
+    iron: '<path d="M32 6 L53 14 L51 35 C49 47 41 54 32 59 C23 54 15 47 13 35 L11 14 Z"/>' + S_('M32 16 L32 50 M20 30 L44 30', 3),
+    volley: at(-9, 2, -24, 0.78, ARROW) + at(0, 0, 0, 0.82, ARROW) + at(9, 2, 24, 0.78, ARROW),
+    pierce: at(0, 0, 90, 0.95, ARROW) + S_('M22 20 C17 26 17 38 22 44 M36 18 C31 25 31 39 36 46', 2.6),
+    farrow: at(-6, 6, 45, 0.85, ARROW) + at(12, -14, 0, 0.5, FLAME),
+    parrow: at(-6, 6, 45, 0.85, ARROW) + '<path d="M46 22 C46 22 56 34 56 41 a10 10 0 0 1 -20 0 C36 34 46 22 46 22 Z" fill="#7cf05c"/>',
+    rain: at(-15, -2, 180, 0.55, ARROW) + at(0, 6, 180, 0.55, ARROW) + at(15, -4, 180, 0.55, ARROW) + S_('M6 58 L58 58', 2.5),
+    rapid: at(2, -15, 90, 0.62, ARROW) + at(-6, 0, 90, 0.62, ARROW) + at(2, 15, 90, 0.62, ARROW),
+    hop: S_('M52 50 C46 16 22 14 14 32', 4) + '<path d="M7 26 L13 42 L22 29 Z"/>' + S_('M40 58 L58 58', 3),
+    eagle: '<path d="M5 32 Q32 7 59 32 Q32 57 5 32 Z"/><circle cx="32" cy="32" r="10" fill="#2a6b1e" stroke="#1a0e06" stroke-width="1.6"/><circle cx="32" cy="32" r="4.5" fill="#0b0805"/><circle cx="29" cy="29" r="2.2" fill="#fff"/>',
+    meteor: S_('M58 6 L32 32 M47 5 L27 25 M59 17 L39 37', 3) + ROCK,
+    nova: S_('M32 8 L32 18 M32 46 L32 56 M8 32 L18 32 M46 32 L56 32 M15 15 L22 22 M42 42 L49 49 M49 15 L42 22 M22 42 L15 49', 3.2) + '<circle cx="32" cy="32" r="9"/>' + S_('M32 11 A21 21 0 1 1 31.9 11', 2),
+    ice: '<path d="M32 3 L40 24 L32 61 L24 24 Z"/><path d="M13 16 L22 29 L18 47 L9 30 Z"/><path d="M51 16 L55 30 L46 47 L42 29 Z"/>' + S_('M32 10 L32 40', 1.4),
+    bolt: '<path d="M39 3 L15 36 L29 36 L22 61 L49 25 L34 25 L44 3 Z"/>',
+    pillar: '<path d="M32 3 C38 15 45 22 43 36 C42 47 38 57 32 60 C26 57 21 47 21 36 C21 24 28 19 32 3 Z"/><path d="M32 26 C35 33 38 38 37 45 C36 51 34 55 32 55 C29 55 27 51 27 45 C27 38 31 34 32 26 Z" fill="#ff8a2a"/>' + S_('M10 58 L54 58', 3),
+    blink: S_('M8 52 C14 22 42 16 52 34', 3) + '<path d="M50 30 L53 39 L62 40 L55 46 L57 55 L50 50 L43 55 L45 46 L38 40 L47 39 Z"/>' + '<circle cx="12" cy="40" r="3"/><circle cx="20" cy="27" r="2.5"/>',
+    mshield: S_('M32 7 A25 25 0 1 1 31.9 7', 4) + S_('M18 22 A18 18 0 0 1 32 14', 2.4) + '<path d="M32 20 L42 26 L42 38 L32 44 L22 38 L22 26 Z"/>',
+    storm: at(-12, 10, 0, 0.55, S_('M58 6 L32 32 M47 5 L27 25', 3) + ROCK) + at(10, -4, 0, 0.6, S_('M58 6 L32 32 M47 5 L27 25', 3) + ROCK) + at(-4, -16, 0, 0.42, ROCK),
+    lmbSword: at(0, 0, 45, 0.95, SWORD),
+    lmbBow: S_('M20 6 C46 18 46 46 20 58', 4.2) + S_('M20 6 L20 58', 1.4) + at(4, 0, 90, 0.7, ARROW),
+    lmbFire: FLAME,
+    embWarrior: at(-6, 0, -35, 0.92, SWORD) + at(6, 0, 35, 0.92, SWORD),
+    embArcher: S_('M18 6 C46 18 46 46 18 58', 4.6) + S_('M18 6 L18 58', 1.6) + at(6, 0, 90, 0.8, ARROW),
+    embMage: S_('M22 60 L40 16', 4) + '<circle cx="42" cy="13" r="8" fill="#ffb648" stroke="#1a0e06" stroke-width="1.6"/>' + S_('M34 10 C36 4 48 4 50 12', 2),
+  };
+  const mixHex = (a, b, t) => {
+    const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+    const ch = (sh) => Math.round(((pa >> sh) & 255) * (1 - t) + ((pb >> sh) & 255) * t);
+    return '#' + ((1 << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).slice(1);
+  };
+  function iconSVG(glyph, c1, c2, plain) {
+    const id = 'ic' + (++iconN), mono = plain === 'mono';
+    const g = GLYPH[glyph].split('GRAD').join(id + 'g');
+    const g1 = mono ? '#BDA77F' : '#ECE5D4', g2 = mono ? '#8C7650' : '#B4A78E';
+    return '<svg viewBox="0 0 64 64" xmlns="' + SVGNS + '"><defs>' +
+      (plain ? '' : '<radialGradient id="' + id + 'b" cx="50%" cy="38%" r="78%"><stop offset="0" stop-color="' + mixHex(c1, '#222729', 0.52) + '"/><stop offset="1" stop-color="' + mixHex(c2, '#0E1112', 0.3) + '"/></radialGradient>') +
+      '<linearGradient id="' + id + 'g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + g1 + '"/><stop offset="1" stop-color="' + g2 + '"/></linearGradient></defs>' +
+      (plain ? '' : '<rect width="64" height="64" fill="url(#' + id + 'b)"/>') +
+      '<g fill="url(#' + id + 'g)" stroke="#14100C" stroke-width="1.6" stroke-linejoin="round" paint-order="stroke">' + g + '</g></svg>';
+  }
+
+  // name, profile (+rate), mana, cooldown (s), icon + colours, description; dmg = multiplier on melee hits of that move
+  const SKILLS = {
+    warrior: [
+      { id: 'whirl', name: 'Girdap', anim: 'special', mp: 30, cd: 8, icon: 'whirl', c: ['#d18a2c', '#2b1205'], dmg: 1.0, desc: 'Kılıcını kolunu tam açarak iki tur çevirir; etrafındaki herkese iki kez vurur.' },
+      { id: 'dash', name: 'Hamle', anim: 'dash', mp: 18, cd: 6, icon: 'dash', c: ['#6f9ccc', '#0d1a2b'], dmg: 1.5, aim: true, desc: 'İmlecin yönüne 4 metre atılır ve kılıcı önündeki düşmana saplar.' },
+      { id: 'quake', name: 'Yer Sarsıntısı', anim: 'attack3', rate: 0.9, mp: 32, cd: 10, icon: 'quake', c: ['#b07a3a', '#24150a'], dmg: 1.3, aim: true, desc: 'Kılıcı yere indirir; şok dalgası 3.5 m içindeki herkesi sarsar.' },
+      { id: 'wave', name: 'Hilal Dalgası', anim: 'attack2', mp: 24, cd: 7, icon: 'wave', c: ['#e0c27a', '#2c210c'], dmg: 1.1, aim: true, desc: 'Geniş bir savuruşla ileri doğru uçan, yolundaki herkesi kesen bir enerji hilali fırlatır.' },
+      { id: 'leap', name: 'Sıçrama Darbesi', anim: 'leap', mp: 34, cd: 12, icon: 'leap', c: ['#c8553a', '#2a0d07'], dmg: 1.6, aim: true, desc: 'Havaya sıçrayıp 3.5 m ileri iner, kılıcı yere gömerek çevresine alan hasarı verir.' },
+      { id: 'spin', name: 'Döner Kesik', anim: 'attack4', mp: 26, cd: 9, icon: 'spin', c: ['#9a6fd0', '#170d2a'], dmg: 1.5, aim: true, desc: 'Arka ayağı üzerinde tam tur dönüp geniş bir çapraz kesişle bitirir.' },
+      { id: 'cry', name: 'Savaş Narası', anim: 'wcry', mp: 20, cd: 22, icon: 'cry', c: ['#d6402e', '#2c0705'], buff: 'rage', desc: 'Kükreyerek öfkelenir: 12 saniye boyunca tüm hasarı %30 artar.' },
+      { id: 'iron', name: 'Demir Beden', anim: 'wcry', rate: 1.15, mp: 30, cd: 26, icon: 'iron', c: ['#d8b048', '#2b2008'], buff: 'iron', desc: 'Bedenini çeliğe çevirir: 8 saniye boyunca alınan hasar %60 azalır.' },
+    ],
+    archer: [
+      { id: 'volley', name: 'Yelpaze Atışı', anim: 'volley', mp: 20, cd: 6, icon: 'volley', c: ['#7fae4a', '#14200a'], aim: true, desc: 'Tek çekişte yelpaze şeklinde üç ok bırakır.' },
+      { id: 'pierce', name: 'Delici Ok', anim: 'shot', rate: 0.72, mp: 24, cd: 7, icon: 'pierce', c: ['#5fb6d8', '#0a1b24'], aim: true, desc: 'Yayı sonuna kadar gerer; ok yolundaki herkesi delip geçer ve 2.4 kat hasar verir.' },
+      { id: 'farrow', name: 'Ateşli Ok', anim: 'shot', mp: 26, cd: 8, icon: 'farrow', c: ['#e2772c', '#2a0e04'], aim: true, desc: 'Ucu alev alan bir ok; çarptığı yerde patlayarak ek ateş hasarı verir.' },
+      { id: 'parrow', name: 'Zehirli Ok', anim: 'shot', mp: 22, cd: 9, icon: 'parrow', c: ['#5aa83a', '#0c1d07'], aim: true, desc: 'Zehre batırılmış ok: hedef 5 saniye boyunca zehir hasarı alır.' },
+      { id: 'rain', name: 'Ok Sağanağı', anim: 'skyshot', mp: 40, cd: 14, icon: 'rain', c: ['#c9a85a', '#241b08'], ground: 2.6, aim: true, desc: 'Göğe ok salar; işaretlenen alana 2.6 m çapında ok yağmuru iner.' },
+      { id: 'rapid', name: 'Seri Atış', anim: 'shot', rate: 1.9, mp: 30, cd: 10, icon: 'rapid', c: ['#d0c060', '#24200a'], aim: true, repeat: 5, desc: 'Peş peşe hızla beş ok atar.' },
+      { id: 'hop', name: 'Geri Sıçrayış', anim: 'hop', mp: 12, cd: 6, icon: 'hop', c: ['#6aa0b0', '#0b1a1e'], aim: true, desc: 'İmlece dönük kalarak 3 metre geriye sıçrar; mesafeyi korur.' },
+      { id: 'eagle', name: 'Kartal Gözü', anim: 'abuff', mp: 30, cd: 25, icon: 'eagle', c: ['#4f9a3c', '#0b1a08'], buff: 'eagle', desc: 'Odaklanır: 10 saniye boyunca atış hızı %40 artar.' },
+    ],
+    mage: [
+      { id: 'meteor', name: 'Meteor', anim: 'meteor', mp: 45, cd: 12, icon: 'meteor', c: ['#e0602a', '#2a0b04'], ground: 2.8, aim: true, desc: 'Gökten yanan bir kaya çağırır; işaretlenen alana 2.8 m yarıçaplı büyük hasar verir.' },
+      { id: 'nova', name: 'Alev Halkası', anim: 'mslam', mp: 32, cd: 8, icon: 'nova', c: ['#f08a2a', '#2c1004'], desc: 'Asayı yere vurur; etrafına 4.5 m yayılan bir ateş halkası salar.' },
+      { id: 'ice', name: 'Buz Mızrağı', anim: 'cast', rate: 1.12, mp: 22, cd: 5, icon: 'ice', c: ['#6cc4f0', '#081a2a'], aim: true, desc: 'Hızlı uçan bir buz mızrağı fırlatır; çarptığı yerde buz parçalarına ayrılır.' },
+      { id: 'bolt', name: 'Yıldırım', anim: 'meteor', rate: 1.55, mp: 30, cd: 7, icon: 'bolt', c: ['#9fb8ff', '#0d1230'], ground: 1.4, aim: true, desc: 'İşaretlenen noktaya gökten yıldırım indirir; anında yüksek hasar.' },
+      { id: 'pillar', name: 'Ateş Sütunu', anim: 'mslam', rate: 1.1, mp: 36, cd: 10, icon: 'pillar', c: ['#ff7a2a', '#2e0c03'], ground: 1.3, aim: true, desc: 'Hedef noktada yerden bir alev sütunu fışkırtır; içindekiler sürekli yanar.' },
+      { id: 'blink', name: 'Işınlanma', anim: 'mbuff', rate: 1.8, mp: 20, cd: 8, icon: 'blink', c: ['#b07ae0', '#1a0b2a'], aim: true, desc: 'İmlecin olduğu yere (en fazla 8 m) ışınlanır.' },
+      { id: 'mshield', name: 'Mana Kalkanı', anim: 'mbuff', mp: 30, cd: 20, icon: 'mshield', c: ['#5f8ef0', '#0a1430'], buff: 'shield', desc: 'Etrafında 700 hasar emen bir büyü kalkanı oluşturur (12 sn).' },
+      { id: 'storm', name: 'Ateş Fırtınası', anim: 'meteor', rate: 0.85, mp: 80, cd: 30, icon: 'storm', c: ['#ff5a1a', '#300803'], ground: 4.2, aim: true, desc: 'Nihai büyü: işaretlenen bölgeye art arda altı meteor yağdırır.' },
+    ],
+  };
+  const BASIC = {
+    warrior: { name: 'Kılıç Darbesi', icon: 'lmbSword', c: ['#8a8f99', '#14161a'], desc: 'Hedefe sağ tık: koşar ve vurur. Her tık (veya basılı tutmak) 3 vuruşluk komboyu sürdürür.' },
+    archer: { name: 'Ok Atışı', icon: 'lmbBow', c: ['#6f8f45', '#121a09'], desc: 'Hedefe sağ tık: menzile (16 m) girer ve ok atar. Her tık (veya basılı tutmak) yeni bir ok.' },
+    mage: { name: 'Ateş Topu', icon: 'lmbFire', c: ['#e06a2a', '#2a0b04'], desc: 'Hedefe sağ tık: menzile (12 m) girer ve patlayan bir ateş topu fırlatır. Her tık yeni bir atış.' },
+  };
+  const CLASS_INFO = {
+    warrior: { name: 'Savaşçı', title: 'Kılıç Ustası', hp: 3400, mp: 420, mpRegen: 9, emb: 'embWarrior' },
+    archer: { name: 'Okçu', title: 'Avcı', hp: 2700, mp: 600, mpRegen: 12, emb: 'embArcher' },
+    mage: { name: 'Büyücü', title: 'Ateş Büyücüsü', hp: 2300, mp: 900, mpRegen: 18, emb: 'embMage' },
+  };
+  const BUFFS = {
+    rage: { name: 'Savaş Narası', dur: 12, icon: 'cry', c: ['#d6402e', '#2c0705'], aura: [0xff5a3a, 0x8a1206] },
+    iron: { name: 'Demir Beden', dur: 8, icon: 'iron', c: ['#d8b048', '#2b2008'], aura: [0xffe08a, 0xb07a1a] },
+    eagle: { name: 'Kartal Gözü', dur: 10, icon: 'eagle', c: ['#4f9a3c', '#0b1a08'], aura: [0xb8ff8a, 0x3a8a1a] },
+    shield: { name: 'Mana Kalkanı', dur: 12, icon: 'mshield', c: ['#5f8ef0', '#0a1430'] },
+  };
+  const SKILL_BY_ID = {};
+  for (const c in SKILLS) for (const s of SKILLS[c]) SKILL_BY_ID[s.id] = s;
+  const skillMul = (id) => (id && SKILL_BY_ID[id] && SKILL_BY_ID[id].dmg) || 1;
+
+  let hero = null, SK = [];
+  const dummyHP = { hp: 20000, max: 20000, t: 99 };
+  // what the game knows about its entities / area, as shown by the HUD
+  const DUMMY_INFO = { id: 'dummy', name: 'Eğitim Kuklası', level: 1, type: 'Talim hedefi', disposition: 'neutral', rank: 'normal' };
+  const REGION = VW ? VW.region : { name: 'Eğitim Alanı', bounds: { minX: -120, maxX: 120, minZ: -120, maxZ: 120 } };
+  const POI = VW ? VW.mapMarkers() : [];                        // village: smith, healer, board, trainer, inn, market, keep, gate   // the 240 m ground plane
+  let lastZone = null;                                          // creatures: spawn camp the player is in (region name + log line)
+  let baseAttackSpeed = 1.08;
+
+  function initHUD(cls) {
+    const info = CLASS_INFO[cls];
+    SK = SKILLS[cls];
+    baseAttackSpeed = knight.attackSpeed;
+    hero = { cls, hp: info.hp, maxHp: info.hp, mp: info.mp, maxMp: info.mp, mpRegen: info.mpRegen, level: 1, exp: 0,
+      cd: SK.map(() => 0), buffs: {}, absorb: 0, rapidLeft: 0, pending: null, hurtT: 99, deadShown: false };
+    const b = BASIC[cls];
+    hud.setPlayerInfo({ name: info.name, title: info.title, emblemHTML: iconSVG(info.emb, '', '', 'mono') });
+    hud.setSkills(SK.map((s, i) => ({ id: s.id, name: s.name, key: String(i + 1), alt: i === 0 ? 'Q' : '', iconHTML: iconSVG(s.icon, s.c[0], s.c[1]), mp: s.mp, cd: s.cd, desc: s.desc })),
+      { id: 'basic', name: b.name, iconHTML: iconSVG(b.icon, b.c[0], b.c[1]), desc: b.desc });
+    hud.show();
+    hud.logLine('system', REGION.name + ' bölgesine girdin.', 'sys');
+    updateHUD(0, true);
+    setTimeout(captureMapImage, 900);                               // world map image for the minimap / world map
+  }
+  function flashMsg(text) { hud.error(text); }                                   // failed actions: short red line, top centre
+  function slotFx(i, cls) { if (cls === 'press') hud.pressed(i); else if (cls === 'shake') hud.deny(i); }
+
+  // ---- casting ----
+  function aimNow() {
+    // creatures: aimed skills go to the SELECTED creature (Metin2 style), the cursor only when nothing is selected
+    const sel = creatures && creatures.byKey(targetSel), kp = knight.root.position;
+    if (sel && sel.alive && Math.hypot(sel.x - kp.x, sel.z - kp.z) < 22) { rangedTarget = sel; return bodyPoint(sel); }
+    rangedTarget = null;
+    return pickAim(lastPointer) || aimFrom(mouseGround);
+  }
+  function faceTo(p) { if (!p) return; yaw = Math.atan2(p.x - knight.root.position.x, p.z - knight.root.position.z); knight.root.rotation.y = yaw; }
+  let skillCircle = null;
+  function castSkill(i) {
+    if (!hero || selecting) return;
+    const s = SK[i]; if (!s) return;
+    if (knight.dead || hero.hp <= 0) { flashMsg('Ölüyken yetenek kullanılamaz'); return; }
+    if (hero.cd[i] > 0) { flashMsg('Yetenek henüz hazır değil'); slotFx(i, 'shake'); return; }
+    if (hero.mp < s.mp) { flashMsg('Yetersiz mana'); slotFx(i, 'shake'); return; }
+    const a = knight.action;
+    if (a && !(a.def.attack && !a.tag) || hero.rapidLeft > 0) { hero.pending = { i, t: 0.45 }; return; }   // busy: buffer it
+    hero.pending = null;
+    moveTarget = null;
+    if (s.aim) { rangedAim = aimNow(); faceTo(rangedAim); }
+    let circle = null;
+    if (s.ground) {
+      const pt = meteorPoint();
+      if (s.id === 'rain') circle = AV.rainMark(pt, s.ground);   // archer: a tactical ground telegraph (ArcherVFX), not a rune circle
+      else if (MFX && knight.cls === 'mage') circle = { mfx: true, point: pt, radius: s.id === 'bolt' ? 1.6 : s.ground };   // magefx: the edge = the real hit radius
+      else {
+        const col = s.id === 'bolt' ? [0x7aa8ff, 0xd8e6ff] : [0xff6a1a, 0xffb030];
+        circle = spawnCircle(pt, s.ground, col[0], col[1]);
+      }
+    }
+    if (MFX && knight.cls === 'mage' && s.id === 'blink') circle = { mfx: true, point: blinkDest(), radius: 0.75 };   // magefx: destination marker
+    knight.play(s.anim, { rate: s.rate, tag: s.id });
+    if (!knight.action || knight.action.tag !== s.id) { if (circle) circle.fade = 0; return; }
+    if (circle && circle.mfx) circle = MFX.telegraph(s.id, circle.point, circle.radius);   // magefx
+    if (circle) { if (s.id === 'meteor') meteorCircle = circle; else skillCircle = circle; }
+    hero.mp -= s.mp; hero.cd[i] = s.cd;
+    if (s.repeat) hero.rapidLeft = s.repeat - 1;
+    slotFx(i, 'press');
+  }
+
+  // ---- buffs / damage / exp ----
+  function addBuff(id) {
+    const B = BUFFS[id];
+    hero.buffs[id] = B.dur;
+    if (id === 'shield') hero.absorb = 700;
+    const p = knight.root.position, col = B.aura || [0x8fc8ff, 0x3a6ad0];
+    hud.combatText({ x: p.x, y: 2.75, z: p.z }, B.name, 'buff');
+    hud.logLine('system', B.name + ' etkin (' + B.dur + ' sn).', 'buff');
+    if (id === 'eagle') { AV.eagle(B.dur); return; }            // archer focus: ArcherVFX activation + reticle for the whole buff
+    if (id === 'shield' && MFX) return;                           // magefx: dome, glyphs and sigil
+    shockwaveC(p, 3, col[0]);
+    for (let k = 0; k < 26; k++) {
+      const a = k / 26 * Math.PI * 2;
+      flame(_mq.set(p.x + Math.cos(a) * 0.6, 0.2, p.z + Math.sin(a) * 0.6), _mv.set(Math.cos(a) * 2.5, 2 + Math.random() * 2, Math.sin(a) * 2.5), 0.7, 0.18, 1.2, col[0], col[1], 0.5, 2.5, 0.9);
+    }
+  }
+  function dealDamage(tg, base, opts) {
+    opts = opts || {};
+    let dmg = base * (hero && hero.buffs.rage ? 1.3 : 1);
+    const crit = !opts.noCrit && Math.random() < 0.15;
+    if (crit) dmg *= 1.75;
+    dmg = Math.max(1, Math.round(dmg));
+    if (tg.id === 'dummy') { dummyHP.hp = Math.max(0, dummyHP.hp - dmg); dummyHP.t = 0; }
+    if (isCreature(tg)) {                                         // creatures: a REQUEST to the authority, which validates it
+      const res = creatures.damage(tg, dmg, { x: knight.root.position.x, z: knight.root.position.z, crit });
+      if (!res || !res.ok) return 0;                              // already dead / out of range: nothing happened
+      const C = tg.creature;
+      targetSel = 'cr:' + C.id;
+      impactHit(tg, crit, opts, !!res.killed);                   // impact: Atherion MobHitFx (every accepted hit, the killing blow too)
+      // damage_number.gd: born MOB_HIT_HEIGHT (6 u) above the struck body's feet, plain digits (str(int(amount)))
+      hud.combatText({ x: tg.pos.x, y: (tg.pos.y || 0) + IFX.NUMBER_Y, z: tg.pos.z }, String(dmg), crit ? 'crit' : (opts.cls || 'dmg'));
+      hud.logLine('combat', C.D.name + ' · ' + fmt(dmg) + ' hasar' + (crit ? ' · kritik' : opts.cls === 'poison' ? ' · zehir' : ''), crit ? 'crit' : opts.cls === 'poison' ? 'dot' : 'dmg');
+      return dmg;                                                 // EXP comes from the kill (creatures.hooks.onKill)
+    }
+    impactHit(tg, crit, opts, false);
+    hud.combatText({ x: tg.pos.x, y: (tg.pos.y || 0) + IFX.NUMBER_Y, z: tg.pos.z }, String(dmg), crit ? 'crit' : (opts.cls || 'dmg'));
+    if (tg.id === 'dummy') {
+      targetSel = 'dummy';                                        // hitting a target selects it
+      hud.logLine('combat', DUMMY_INFO.name + ' · ' + fmt(dmg) + ' hasar' + (crit ? ' · kritik' : opts.cls === 'poison' ? ' · zehir' : ''), crit ? 'crit' : opts.cls === 'poison' ? 'dot' : 'dmg');
+    }
+    if (tg.vkey) {                                                // village training dummies / archery butts: wobble, own HP, select
+      tg.onHit(knight.root.position, opts.big ? 1.6 : 1, dmg); targetSel = tg.vkey;
+      hud.logLine('combat', tg.name + ' · ' + fmt(dmg) + ' hasar' + (crit ? ' · kritik' : opts.cls === 'poison' ? ' · zehir' : ''), crit ? 'crit' : opts.cls === 'poison' ? 'dot' : 'dmg');
+    }
+    if (hero) gainExp(dmg * 0.6);
+    return dmg;
+  }
+  function gainExp(n) {
+    hero.exp += n;
+    hud.xpGain(n);
+    const need = () => 1500 + hero.level * 900;
+    let up = false;
+    while (hero.exp >= need()) {
+      hero.exp -= need(); hero.level++; up = true;
+      hero.maxHp = Math.round(hero.maxHp * 1.08); hero.maxMp = Math.round(hero.maxMp * 1.06);
+      if (hero.hp > 0) { hero.hp = hero.maxHp; hero.mp = hero.maxMp; }   // an orb landing on a corpse does not revive it
+      hud.levelUp(hero.level); hud.logLine('system', 'Seviye ' + hero.level + ' oldun. Can ve mana yenilendi.', 'lvl');
+    }
+    if (up) PFX.levelUp(knight.root);                              // progress: Atherion LevelUpEffect (column + rim + pulse), one at a time
+  }
+  function takeDamage(amount, opts) {
+    opts = opts || {};
+    if (!hero || hero.hp <= 0) return;
+    if (hero.buffs.iron) amount *= 0.4;
+    if (hero.absorb > 0) { const ab = Math.min(hero.absorb, amount); hero.absorb -= ab; amount -= ab; if (hero.absorb <= 0) delete hero.buffs.shield; if (MFX && ab > 0) MFX.shieldHit(opts.fromX, opts.fromZ); }   // magefx: ripple toward the attacker
+    amount = Math.round(amount);
+    hero.hp = Math.max(0, hero.hp - amount); hero.hurtT = 0;
+    const hp = knight.root.position;
+    if (amount > 0) {
+      // damage_number.gd spawn_player_hit: TAKEN_HIT_HEIGHT (8.4 u) above the feet, bare red digits; MobHitFx self_hit: the same
+      // ember burst / impact mark / flash on your own body in the red palette (no sparks)
+      hud.combatText({ x: hp.x, y: IFX.TAKEN_Y, z: hp.z }, String(amount), 'hurt'); hud.logLine('combat', 'Aldığın hasar · ' + fmt(amount), 'hurt');
+      IFX.hit({ root: knight.root, self: true, depth: 0.45, flash: (d, s, c) => IFX.flashRoot(knight.root, d, s, c) });
+    }
+    hud.hurt();
+    if (hero.hp <= 0) { knight.play('die'); hero.rapidLeft = 0; hud.logLine('system', 'Öldün.', 'hurt'); }
+    else if (opts.flinch !== false) knight.play('hit');         // creatures: light bites do not interrupt the hero (heavy hits do)
+  }
+  /* creatures: authority events -> hero damage, kill rewards, world feedback */
+  if (creatures) {
+    creatures.hooks.onPlayerHit = (ev, C) => {
+      takeDamage(ev.damage, { flinch: !!ev.heavy, fromX: -ev.dirX, fromZ: -ev.dirZ });   // magefx: shield ripple faces the attacker
+      if (hero && hero.hp > 0) hud.logLine('combat', C.D.name + ' sana vurdu · ' + fmt(ev.damage), 'hurt');
+      if (!targetSel) targetSel = 'cr:' + C.id;                   // being attacked selects the attacker
+      if (ev.heavy) { shake = Math.max(shake, 0.25); punch = Math.max(punch, 0.5); }   // (the hit look: takeDamage -> IFX self hit)
+    };
+    creatures.hooks.onKill = (ev, C) => {
+      if (!C) return;
+      if (hero && ev.killer === 'local') {
+        hud.logLine('system', C.D.name + ' öldürüldü · +' + fmt(ev.exp) + ' tecrübe' + (ev.loot && ev.loot.length ? ' · ' + ev.loot.map((l) => l.name).join(', ') : ''), 'lvl');
+        // progress: Atherion ExpOrb - .3 s after the death ONE orb carries the whole reward to the hero; the EXP (HUD rail +N TP,
+        // level-up) is credited when it is absorbed (timeouts / live cap credit it at once, so nothing is lost)
+        PFX.orb({ x: C.x, y: 0, z: C.z }, { pos: (out) => out.copy(knight.root.position) }, ev.exp, (n) => { if (hero) gainExp(n); }, 0.3);
+      }
+      IFX.kill({ x: C.x, z: C.z });                                  // impact: DeathBurst ring + rising smoke at the feet
+    };
+    creatures.hooks.onEvent = (ev, C) => {
+      if (!C) return;
+      if (ev.type === 'appear' || ev.type === 'despawn') dust(C.x, C.z, C.D.boss ? 10 : 4, C.D.boss ? 1.8 : 0.8, 0.4);
+      else if (ev.type === 'attack' && C.D.attacks[ev.attack] && C.D.attacks[ev.attack].heavy) shake = Math.max(shake, 0.04);
+      else if (ev.type === 'enraged') hud.logLine('combat', C.D.name + ' öfkelendi!', 'hurt');
+      else if (ev.type === 'stagger') hud.logLine('combat', C.D.name + ' sendeledi.', 'dmg');
+    };
+  }
+
+  // ---- skill world effects (fired on the move's contact event) ----
+  function shockwaveC(point, radius, color) {
+    const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+    m.rotation.x = -Math.PI / 2; m.position.set(point.x, 0.05, point.z); scene.add(m);
+    decals.push({ m, t: 0, life: 0.5, kind: 'ring', radius });
+  }
+  function areaDamage(center, radius, base, opts) {
+    for (const tg of knight.hitTargets) {
+      const dx = tg.pos.x - center.x, dz = tg.pos.z - center.z, dist = Math.hypot(dx, dz);
+      if (dist > radius + (tg.radius || 0.4)) continue;
+      const fall = 1 - 0.4 * Math.min(1, dist / radius);
+      if (tg.id === 'dummy') dummyHit(dist > 0.05 ? dx / dist : 1, dist > 0.05 ? dz / dist : 0, 1.2 * fall);
+      dealDamage(tg, base * fall, Object.assign({ at: center }, opts));   // at: the blast point (Atherion stashes the AoE impact point)
+    }
+  }
+  // crescent wave (warrior): a flat glowing crescent skimming forward
+  const waveTex = (function () {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(128, 150, 40, 128, 150, 140);
+    gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.62, 'rgba(255,255,255,0)'); gr.addColorStop(0.78, 'rgba(255,255,255,1)'); gr.addColorStop(0.86, 'rgba(255,255,255,0.5)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.beginPath(); g.ellipse(128, 150, 128, 140, 0, Math.PI, 2 * Math.PI); g.fill();
+    const fade = g.createLinearGradient(0, 0, 256, 0);
+    fade.addColorStop(0, 'rgba(0,0,0,1)'); fade.addColorStop(0.2, 'rgba(0,0,0,0)'); fade.addColorStop(0.8, 'rgba(0,0,0,0)'); fade.addColorStop(1, 'rgba(0,0,0,1)');
+    g.globalCompositeOperation = 'destination-out'; g.fillStyle = fade; g.fillRect(0, 0, 256, 128);
+    return new THREE.CanvasTexture(c);
+  })();
+  const waves = [];
+  function launchWave() {
+    const fwd = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    const mk = (color, op, add) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.6), new THREE.MeshBasicMaterial({ map: waveTex, color, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending }));
+      return m;
+    };
+    const g = new THREE.Group(), body = mk(0xffd77a, 0.95), core = mk(0xffffff, 0.8, true);
+    body.rotation.x = -Math.PI / 2; core.rotation.x = -Math.PI / 2; core.scale.set(0.85, 0.85, 1); core.position.y = 0.01;
+    g.add(body, core);
+    const p = knight.root.position.clone().addScaledVector(fwd, 0.9); p.y = 0.9;
+    g.position.copy(p); g.rotation.y = yaw + Math.PI; scene.add(g);
+    waves.push({ g, pos: p, vel: fwd.multiplyScalar(17), life: 0, hit: new Set() });
+  }
+  function updateWaves(dt) {
+    for (let i = waves.length - 1; i >= 0; i--) {
+      const W = waves[i]; W.life += dt;
+      W.pos.addScaledVector(W.vel, dt); W.g.position.copy(W.pos);
+      const sc = 1 + W.life * 0.9; W.g.scale.set(sc, 1, sc);
+      W.g.children.forEach((m) => { m.material.opacity = (m.material.blending === THREE.AdditiveBlending ? 0.8 : 0.95) * Math.min(1, (0.85 - W.life) / 0.25); });
+      if (Math.random() < 0.8) flame(_mq.copy(W.pos).add(_mv.set(rnd(1.2 * sc), rnd(0.2), rnd(0.3))), _mv.copy(W.vel).multiplyScalar(-0.05), 0.3, 0.07, 0, 0xfff2c0, 0xffb040, 0, 1, 1, true);
+      for (const tg of knight.hitTargets) {
+        if (W.hit.has(tg)) continue;
+        if (Math.hypot(tg.pos.x - W.pos.x, tg.pos.z - W.pos.z) < 1.3 * sc + (tg.radius || 0.4) * 0.5) {
+          W.hit.add(tg);
+          const dir = W.vel.clone().normalize();
+          if (tg.id === 'dummy') dummyHit(dir.x, dir.z, 1.1);
+          dealDamage(tg, 150 + Math.random() * 40, { heavy: true });   // hit look: impactHit (Atherion MobHitFx, skill = knockdown)
+        }
+      }
+      if (W.life > 0.85) { scene.remove(W.g); W.g.children.forEach((m) => { m.geometry.dispose(); m.material.dispose(); }); waves.splice(i, 1); }
+    }
+  }
+  // lightning (mage): jagged white-blue bolt from the sky, a few branches, flickers out
+  const bolts = [];
+  function lightning(point) {
+    const mkPath = (from, to, n, jit) => {
+      const pts = [from.clone()];
+      for (let k = 1; k < n; k++) { const t = k / n; pts.push(from.clone().lerp(to, t).add(new THREE.Vector3(rnd(jit), rnd(jit * 0.3), rnd(jit)))); }
+      pts.push(to.clone());
+      const path = new THREE.CurvePath();
+      for (let k = 0; k < pts.length - 1; k++) path.add(new THREE.LineCurve3(pts[k], pts[k + 1]));
+      return { path, pts };
+    };
+    const top = point.clone().add(new THREE.Vector3(rnd(1.5), 14, rnd(1.5)));
+    const g = new THREE.Group();
+    const add = (path, r, color, op) => { const m = new THREE.Mesh(new THREE.TubeGeometry(path, 64, r, 5, false), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, depthWrite: false, blending: THREE.AdditiveBlending })); g.add(m); };
+    const main = mkPath(top, point.clone().setY(0.05), 14, 0.9);
+    add(main.path, 0.05, 0xffffff, 1); add(main.path, 0.2, 0x6f9dff, 0.45);
+    for (let b = 0; b < 3; b++) {
+      const s = main.pts[3 + b * 3], e = s.clone().add(new THREE.Vector3(rnd(2.5), -2 - Math.random() * 3, rnd(2.5)));
+      const br = mkPath(s, e, 6, 0.5); add(br.path, 0.03, 0xe8f0ff, 0.9); add(br.path, 0.12, 0x6f9dff, 0.3);
+    }
+    scene.add(g);
+    bolts.push({ g, t: 0 });
+    blastLight.color.setHex(0xb8d0ff); blastLight.position.copy(point).setY(2); blastI = Math.max(blastI, 9);
+    for (let k = 0; k < 24; k++) flame(_mq.copy(point).setY(0.2), randDir(_mv).multiplyScalar(4 + Math.random() * 4).setY(2 + Math.random() * 4), 0.4, 0.05, 0, 0xffffff, 0x7aa8ff, -10, 0.5, 1, true);
+    flame(point.clone().setY(0.6), _mv.set(0, 0, 0), 0.2, 2.2, 0.8, 0xf0f6ff, 0x6f9dff, 0, 0, 0.8, true);
+    shockwaveC(point, 2.2, 0xcfe0ff); scorch(point, 0.9);
+    shake = Math.max(shake, 0.25); punch = Math.max(punch, 0.5);
+  }
+  function updateBolts(dt) {
+    for (let i = bolts.length - 1; i >= 0; i--) {
+      const B = bolts[i]; B.t += dt;
+      const vis = B.t < 0.06 || (B.t > 0.1 && B.t < 0.26);
+      B.g.visible = vis;
+      B.g.children.forEach((m) => { m.material.opacity *= 0.96; });
+      if (B.t > 0.32) { scene.remove(B.g); B.g.children.forEach((m) => { m.geometry.dispose(); m.material.dispose(); }); bolts.splice(i, 1); }
+    }
+    if (!bolts.length && blastI < 0.2) blastLight.color.setHex(0xffa050);
+  }
+  // fire pillar (mage): a column of flame erupting from the circle, burning anything inside
+  const pillars = [];
+  function updatePillars(dt) {
+    for (let i = pillars.length - 1; i >= 0; i--) {
+      const P = pillars[i]; P.t += dt;
+      if (P.t < 0) continue;
+      const k = P.t < 0.15 ? P.t / 0.15 : P.t > 1.4 ? Math.max(0, (1.7 - P.t) / 0.3) : 1;
+      for (let n = 0; n < Math.round(7 * k); n++) {
+        const r = Math.random() * 0.9, a = Math.random() * 6.28;
+        flame(_mq.set(P.p.x + Math.cos(a) * r, 0.1 + Math.random() * 0.4, P.p.z + Math.sin(a) * r), _mv.set(rnd(0.4), 5 + Math.random() * 4, rnd(0.4)), 0.55 + Math.random() * 0.3, 0.42, 1.0, 0xffc040, 0xc02a08, 2, 1.2, 0.9);
+      }
+      if (Math.random() < 0.6 * k) flame(_mq.set(P.p.x + rnd(0.5), 0.3, P.p.z + rnd(0.5)), _mv.set(rnd(1), 7 + Math.random() * 3, rnd(1)), 0.6, 0.06, 0, 0xfff0c0, 0xff6000, -2, 0.4, 1, true);
+      boltLight.position.copy(P.p).setY(1.5); boltLight.intensity = Math.max(boltLight.intensity, 4 * k);
+      P.tick -= dt;
+      if (P.tick <= 0 && P.t < 1.5) { P.tick = 0.3; areaDamage(P.p, 1.3, 70, { noCrit: true, y: 2.6 }); }
+      if (P.t > 1.75) { if (P.circle) P.circle.fade = Math.max(P.circle.fade, 0); pillars.splice(i, 1); }
+    }
+  }
+  // damage over time (poison)
+  const dots = [];
+  function updateDots(dt) {
+    for (let i = dots.length - 1; i >= 0; i--) {
+      const D = dots[i]; D.t -= dt;
+      if (D.tg.alive && !D.tg.alive()) { dots.splice(i, 1); continue; }   // creatures: the poison ends with its victim
+      if (D.t <= 0) { D.t = D.every; D.n--; dealDamage(D.tg, D.dmg, { noCrit: true, cls: 'poison', y: 2.2 }); if (D.anchor) AV.poisonTick(D.anchor); if (D.n <= 0) dots.splice(i, 1); }   // wisps between ticks: ArcherVFX status
+    }
+  }
+  // mana shield bubble
+  const bubble = new THREE.Mesh(new THREE.SphereGeometry(1.15, 40, 28), new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { uT: { value: 0 }, uA: { value: 0 } },
+    vertexShader: 'varying vec3 vN; varying vec3 vV; varying vec3 vP; void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); vP = position; gl_Position = projectionMatrix * mv; }',
+    fragmentShader: 'uniform float uT; uniform float uA; varying vec3 vN; varying vec3 vV; varying vec3 vP;' +
+      'void main(){ float f = pow(1.0 - abs(dot(vN, vV)), 2.2); float band = 0.5 + 0.5 * sin(vP.y * 9.0 - uT * 3.0 + sin(vP.x * 4.0 + uT));' +
+      ' vec3 c = mix(vec3(0.25,0.45,1.0), vec3(0.75,0.9,1.0), f); gl_FragColor = vec4(c, (f * 0.85 + band * 0.08) * uA); }',
+  }));
+  bubble.visible = false; bubble.renderOrder = 23; scene.add(bubble);
+  // queued sub-effects (arrow rain, meteor storm)
+  const timed = [];
+  function later(t, fn) { timed.push({ t, fn }); }
+  function skillImpact(e) {
+    const id = e.skill, def = e.def, kp = knight.root.position;
+    if (MFX && knight.cls === 'mage' && mageFx(id, def)) return;   // magefx: the nine mage spells
+    const fwd = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    switch (id) {
+      // ---- warrior ----
+      case 'quake': {
+        const tip = knight.bladeTipWorld(new THREE.Vector3()); tip.y = 0.2;
+        explode(tip, 0.5, { pal: 'dust' }); dust(tip.x, tip.z, 16, 3, 0.9);
+        shockwaveC(tip, 5.2, 0xf0d8a0); shockwaveC(tip, 3.4, 0xffffff);
+        scorch(tip, 1.4); areaDamage(tip, 3.5, 130, { big: true });
+        shake = Math.max(shake, 0.32); punch = 1;
+        break;
+      }
+      case 'wave': launchWave(); break;
+      case 'leap': {
+        const tip = kp.clone().addScaledVector(fwd, 1.6); tip.y = 0.2;
+        dust(tip.x, tip.z, 18, 3.4, 1); shockwaveC(tip, 4.4, 0xf0d8a0); scorch(tip, 1.2);
+        areaDamage(tip, 3.0, 120, { big: true }); shake = Math.max(shake, 0.35); punch = 1;
+        break;
+      }
+      case 'cry': addBuff('rage'); shake = Math.max(shake, 0.12); break;
+      case 'iron': addBuff('iron'); break;
+      case 'dash': case 'whirl': case 'spin': break;
+      // ---- archer ----
+      case 'volley': fireArrows(def, '', 1); break;
+      case 'pierce': fireArrows(def, 'pierce', 2.4); break;
+      case 'farrow': fireArrows(def, 'fire', 1.2); break;
+      case 'parrow': fireArrows(def, 'poison', 1); break;
+      case 'rapid': {                                             // 5 arrows x 0.55 (= the old 3 x 0.9); index / final drive the burst rhythm
+        const n = SKILL_BY_ID.rapid.repeat || 5, left = hero ? hero.rapidLeft : 0;
+        fireArrows(def, 'rapid', 0.55, { index: Math.max(0, n - 1 - left), final: left === 0 });
+        break;
+      }
+      case 'rain': {                                              // sky shot; the volleys land on the marked circle (damage per volley: onRainWave)
+        const L = knight.arrowLaunch(); if (L) AV.shoot('sky', { pos: L.pos, dir: L.dir, feet: kp });
+        const circ = skillCircle; skillCircle = null;
+        AV.rain(circ && circ.F ? circ : { center: meteorPoint(), radius: 2.6 });
+        break;
+      }
+      case 'hop': break;                                          // take-off / air / landing effects: ArcherVFX tracks the 'hop' move
+      case 'eagle': addBuff('eagle'); break;
+      // ---- mage ----
+      case 'meteor': summonMeteor(def); break;
+      case 'ice': launchFireball(def, 'ice'); break;
+      case 'nova': {
+        const c = kp.clone(); c.y = 0.25;
+        for (let k = 0; k < 44; k++) {
+          const a = k / 44 * Math.PI * 2;
+          flame(_mq.set(c.x + Math.cos(a) * 0.5, 0.25, c.z + Math.sin(a) * 0.5), _mv.set(Math.cos(a) * 11, 0.6, Math.sin(a) * 11), 0.42, 0.5, 1.1, 0xffc040, 0xc02a08, 1.2, 4.5, 0.9);
+          if (k % 2) flame(_mq.set(c.x, 0.3, c.z), _mv.set(Math.cos(a) * 9, 1.5, Math.sin(a) * 9), 0.35, 0.18, 1, 0xfff0c0, 0xff8020, 0, 4, 0.8, true);
+        }
+        shockwaveC(c, 6, 0xffb35a); scorch(c, 1.6);
+        blastLight.position.copy(c).setY(1); blastI = Math.max(blastI, 5);
+        areaDamage(c, 4.5, 140, { big: true }); shake = Math.max(shake, 0.2);
+        break;
+      }
+      case 'bolt': {
+        const c = (skillCircle && skillCircle.point) || meteorPoint(), circ = skillCircle; skillCircle = null;
+        lightning(c); areaDamage(c, 1.6, 260, { big: true, cls: 'ice' });
+        if (circ) circ.fade = Math.max(circ.fade, 0);
+        break;
+      }
+      case 'pillar': {
+        const c = (skillCircle && skillCircle.point) || meteorPoint(), circ = skillCircle; skillCircle = null;
+        pillars.push({ p: c.clone(), t: -0.12, tick: 0, circle: circ });
+        dust(c.x, c.z, 8, 1.5, 0.6); shake = Math.max(shake, 0.1);
+        break;
+      }
+      case 'blink': {
+        const from = kp.clone(), aim = rangedAim ? rangedAim.clone().setY(0) : from.clone().addScaledVector(fwd, 6);
+        const d = aim.clone().sub(from); d.y = 0;
+        if (d.length() > 8) d.setLength(8);
+        const to = VW ? VW.clampMove(from, from.clone().add(d)) : from.clone().add(d);   // village: never blink into walls
+        const dd = Math.hypot(to.x - dummy.g.position.x, to.z - dummy.g.position.z);
+        if (dd < 1.2) to.add(new THREE.Vector3(to.x - dummy.g.position.x, 0, to.z - dummy.g.position.z).normalize().multiplyScalar(1.2 - dd));
+        const burst = (p) => {
+          for (let k = 0; k < 30; k++) flame(_mq.set(p.x + rnd(0.4), 0.2 + Math.random() * 1.9, p.z + rnd(0.4)), randDir(_mv).multiplyScalar(2.5), 0.5, 0.1, 0.6, 0xf0d8ff, 0x8a40e0, 1, 2, 1, true);
+          flame(_mq.set(p.x, 1.1, p.z), _mv.set(0, 0, 0), 0.25, 1.6, 0.6, 0xe8d0ff, 0x8040d0, 0, 0, 0.8, true);
+          shockwaveC(p, 1.8, 0xc8a0ff);
+        };
+        burst(from); knight.root.position.copy(to); burst(to);
+        break;
+      }
+      case 'mshield': addBuff('shield'); break;
+      case 'storm': {
+        const c = (skillCircle && skillCircle.point) || meteorPoint(), circ = skillCircle; skillCircle = null;
+        for (let k = 0; k < 6; k++) {
+          const a = k * 2.4 + Math.random(), r = k === 0 ? 0 : 1.2 + Math.random() * 2.4;
+          later(k * 0.22, () => summonMeteor(def, new THREE.Vector3(c.x + Math.cos(a) * r, 0, c.z + Math.sin(a) * r), { size: 0.72, mul: 0.65 }));
+        }
+        later(6 * 0.22 + 0.7, () => { if (circ) circ.fade = Math.max(circ.fade, 0); });
+        break;
+      }
+    }
+  }
+
+  // ---- per-frame: regen, cooldowns, buffs, queued casts, auras, DOM ----
+  const auraRing = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.8, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+  auraRing.rotation.x = -Math.PI / 2; scene.add(auraRing);
+  const fmt = (n) => Math.round(n).toLocaleString('tr');
+  const hudState = {}, buffIcons = {};
+  const buffIcon = (id) => buffIcons[id] || (buffIcons[id] = id === 'poison' ? iconSVG('parrow', '#5aa83a', '#0c1d07') : iconSVG(BUFFS[id].icon, BUFFS[id].c[0], BUFFS[id].c[1]));
+  /* top-down render of the world for the minimap / world map (mapState.image): rendered once, orthographic, north (−Z) up.
+     Hero, creatures and markers are hidden for the shot; fog is off so the far edges keep their colour. */
+  let mapImage = null;
+  function captureMapImage() {
+    if (mapImage || !VW) return;
+    const b = REGION.bounds, w = b.maxX - b.minX, d = b.maxZ - b.minZ, px = 1024, py = Math.round(px * d / w);
+    const cam = new THREE.OrthographicCamera(-w / 2, w / 2, d / 2, -d / 2, 1, 600);
+    cam.position.set((b.minX + b.maxX) / 2, 300, (b.minZ + b.maxZ) / 2); cam.up.set(0, 0, -1); cam.lookAt(cam.position.x, 0, cam.position.z); cam.updateMatrixWorld();
+    const rt = new THREE.WebGLRenderTarget(px, py);                  // same (linear) output encoding as the screen
+    const hide = [knight.root, knight.trail.mesh, knight.slash.group, marker, targetRing, auraRing, bubble].concat(VW.mapHide ? VW.mapHide() : []).filter(Boolean), was = hide.map((o) => o.visible);   // village: + god rays / fireflies
+    hide.forEach((o) => { o.visible = false; });
+    if (creatures) creatures.setVisible(false);
+    const fog = scene.fog; scene.fog = null;
+    if (VW && VW.World) VW.World.cullOff(true);                      // open world: distance culling off for the one-off map shot
+    renderer.setRenderTarget(rt); renderer.render(scene, cam); renderer.setRenderTarget(null);
+    scene.fog = fog; hide.forEach((o, i) => { o.visible = was[i]; });
+    if (VW && VW.World) VW.World.cullOff(false);
+    if (creatures) creatures.setVisible(true);
+    const buf = new Uint8Array(px * py * 4); renderer.readRenderTargetPixels(rt, 0, 0, px, py, buf); rt.dispose();
+    const cv = document.createElement('canvas'); cv.width = px; cv.height = py;
+    const g = cv.getContext('2d'), img = g.createImageData(px, py);
+    for (let y = 0; y < py; y++) img.data.set(buf.subarray((py - 1 - y) * px * 4, (py - y) * px * 4), y * px * 4);   // GL rows are bottom-up
+    g.putImageData(img, 0, 0);
+    mapImage = { src: cv, minX: b.minX, maxX: b.maxX, minZ: b.minZ, maxZ: b.maxZ };
+    window.__mapImage = mapImage;
+  }
+  function updateHUD(dt, force) {
+    // sub-effects that run without a hero too (selection)
+    for (let i = timed.length - 1; i >= 0; i--) { timed[i].t -= dt; if (timed[i].t <= 0) { const f = timed[i].fn; timed.splice(i, 1); f(); } }
+    updateWaves(dt); updateBolts(dt); updatePillars(dt); updateDots(dt);
+    if (!hero) return;
+    const H = hero;
+    if (knight.dead && H.hp > 0) H.hp = 0;
+    if (H.hp > 0) {
+      H.mp = Math.min(H.maxMp, H.mp + H.mpRegen * dt);
+      H.hurtT += dt; if (H.hurtT > 3) H.hp = Math.min(H.maxHp, H.hp + H.maxHp * 0.02 * dt);
+    }
+    for (let i = 0; i < H.cd.length; i++) if (H.cd[i] > 0) H.cd[i] = Math.max(0, H.cd[i] - dt);   // the HUD flashes the slot when it is ready
+    for (const b in H.buffs) { H.buffs[b] -= dt; if (H.buffs[b] <= 0) { delete H.buffs[b]; if (b === 'shield') H.absorb = 0; hud.logLine('system', BUFFS[b].name + ' sona erdi.', 'end'); } }
+    knight.attackSpeed = baseAttackSpeed * (H.buffs.eagle ? 1.4 : 1);
+    // queued casts: buffered press, rapid-fire follow-ups
+    if (H.pending) { H.pending.t -= dt; if (H.pending.t <= 0) H.pending = null; else if (!knight.action || (knight.action.def.attack && !knight.action.tag)) { const i = H.pending.i; H.pending = null; castSkill(i); } }
+    if (H.rapidLeft > 0) {
+      const a = knight.action;
+      if (knight.dead) H.rapidLeft = 0;
+      else if (!a || (a.tag === 'rapid' && a.t >= a.def.dur * 0.68)) {
+        rangedAim = aimNow(); faceTo(rangedAim);
+        knight.play('shot', { rate: 1.9, tag: 'rapid' }); H.rapidLeft--;
+      }
+    }
+    // buff auras
+    const kp = knight.root.position;
+    let ringCol = null;
+    for (const b of ['rage', 'iron']) if (H.buffs[b]) {          // (eagle: ArcherVFX focus reticle)
+      const c = BUFFS[b].aura; ringCol = c[0];
+      if (Math.random() < 0.5) { const a = Math.random() * 6.28; flame(_mq.set(kp.x + Math.cos(a) * 0.55, 0.1, kp.z + Math.sin(a) * 0.55), _mv.set(0, 1.4 + Math.random(), 0), 0.8, 0.09, 0.6, c[0], c[1], 0.4, 0.5, 0.9, b !== 'rage'); }
+    }
+    auraRing.visible = !!ringCol;
+    if (ringCol) { auraRing.material.color.setHex(ringCol); auraRing.position.set(kp.x, 0.04, kp.z); auraRing.material.opacity = 0.45 + 0.2 * Math.sin(performance.now() / 180); }
+    bubble.visible = !MFX && !!H.buffs.shield;                   // magefx draws the shield
+    if (bubble.visible) {
+      bubble.position.set(kp.x, 1.15, kp.z); bubble.material.uniforms.uT.value += dt;
+      const fadeIn = Math.min(1, (BUFFS.shield.dur - H.buffs.shield) / 0.25), fadeOut = Math.min(1, H.buffs.shield / 0.4);
+      bubble.material.uniforms.uA.value = Math.min(fadeIn, fadeOut) * (0.6 + 0.4 * H.absorb / 700);
+      bubble.scale.setScalar(1 + 0.02 * Math.sin(bubble.material.uniforms.uT.value * 5));
+    }
+    // dummy regen
+    dummyHP.t += dt;
+    if (dummyHP.hp <= 0) { dummyHP.hp = dummyHP.max; hud.logLine('system', DUMMY_INFO.name + ' yenilendi.', 'sys'); dust(dummy.g.position.x, dummy.g.position.z, 12, 2, 0.8); }
+    if (dummyHP.t > 4) dummyHP.hp = Math.min(dummyHP.max, dummyHP.hp + dummyHP.max * 0.3 * dt);
+    // target selection: kept until Esc, or dropped once far out of range
+    if (targetSel === 'dummy' && Math.hypot(kp.x - dummy.g.position.x, kp.z - dummy.g.position.z) > 40) targetSel = null;
+    const selC = creatures ? creatures.byKey(targetSel) : null;     // creatures: selected creature (kept while its corpse lies)
+    if (targetSel && targetSel.startsWith('cr:') && (!selC || selC.despawned || (!selC.alive && selC.deadT > 4) || Math.hypot(kp.x - selC.x, kp.z - selC.z) > 40)) targetSel = null;
+    if (selC && targetSel) { targetRing.position.set(selC.x, 0.035, selC.z); targetRing.scale.setScalar(selC.D.radius + 0.25); targetRing.material.color.setHex(selC.alive ? (creatures.info(selC).disposition === 'hostile' ? 0xb5524c : 0xc49a55) : 0x6a6a6a); }
+    else { targetRing.position.set(dummy.g.position.x, 0.035, dummy.g.position.z); targetRing.scale.setScalar(1); targetRing.material.color.setHex(0xc49a55); }
+    const selV = VW && targetSel && targetSel.startsWith('vt:') ? VW.trainingTarget(targetSel) : null;   // village training targets
+    if (selV) { targetRing.position.set(selV.pos.x, 0.035, selV.pos.z); targetRing.scale.setScalar(selV.radius + 0.55); targetRing.material.color.setHex(0xc49a55); if (Math.hypot(kp.x - selV.pos.x, kp.z - selV.pos.z) > 40) targetSel = null; }
+    targetRing.material.opacity += ((targetSel === 'dummy' || (selC && targetSel) || selV ? 0.7 : 0) - targetRing.material.opacity) * Math.min(1, dt * 12);
+    targetRing.visible = targetRing.material.opacity > 0.01;
+    // HUD state: the components diff it and only touch the DOM when something visible changes
+    const S = hudState, need = 1500 + H.level * 900;
+    S.player = { level: H.level, hp: H.hp, maxHp: H.maxHp, mp: H.mp, maxMp: H.maxMp, mpRegen: H.mpRegen, absorb: H.absorb, dead: H.hp <= 0,
+      buffs: Object.keys(H.buffs).map((b) => ({ id: b, name: BUFFS[b].name, iconHTML: buffIcon(b), left: H.buffs[b], dur: BUFFS[b].dur })) };
+    S.exp = { level: H.level, exp: H.exp, need };
+    S.skills = SK.map((s, i) => ({ cd: H.cd[i], cdTotal: s.cd, usable: H.mp >= s.mp, casting: !!(knight.action && knight.action.tag === s.id),
+      active: !!(s.buff && H.buffs[s.buff]), activeLeft: s.buff ? H.buffs[s.buff] || 0 : 0, activeDur: s.buff ? BUFFS[s.buff].dur : 0 }));
+    if (targetSel === 'dummy') {
+      let pois = 0;
+      for (const D of dots) if (D.tg.id === 'dummy') pois = Math.max(pois, (D.n - 1) * D.every + D.t);
+      S.target = Object.assign({ hp: dummyHP.hp, maxHp: dummyHP.max,
+        effects: pois > 0 ? [{ id: 'poison', name: 'Zehir', desc: 'Saniyede 42 zehir hasarı.', iconHTML: buffIcon('poison'), left: pois, debuff: true }] : [] }, DUMMY_INFO);
+    } else if (selC && targetSel) {                                // creatures: target frame from the authority's state
+      const ti = creatures.info(selC);
+      let pois = 0;
+      for (const D of dots) if (D.tg.creature === selC) pois = Math.max(pois, (D.n - 1) * D.every + D.t);
+      if (pois > 0) ti.effects.push({ id: 'poison', name: 'Zehir', desc: 'Saniyede 42 zehir hasarı.', iconHTML: buffIcon('poison'), left: pois, debuff: true });
+      if (!selC.alive) { ti.hp = 0; ti.type = 'Ölü'; }
+      S.target = ti;
+    } else if (VW && targetSel && targetSel.startsWith('vt:')) S.target = VW.targetInfo(targetSel);   // village training targets
+    else S.target = null;
+    const view = controls.target.clone().sub(camera.position);
+    const zone = VW && VW.zoneName ? { name: VW.zoneName(kp.x, kp.z) } : (creatures && creatures.zoneAt(kp.x, kp.z));   // open world: the valley / region the hero stands in
+    if (zone && (!lastZone || zone.name !== lastZone.name)) hud.logLine('system', zone.name + ' bölgesine girdin.', 'sys');
+    lastZone = zone || null;
+    S.walk = walkMode;
+    // name plates (ui/nameplates.js): creatures within 30 m (visual position, point above the head) + the player
+    const plates = S.plates || (S.plates = []);
+    plates.length = 0;
+    if (creatures) for (const rec of creatures.authority.creatures) {
+      const e = creatures.views.get(rec.id);
+      if (!e || !e.view.root.visible || Math.hypot(rec.x - kp.x, rec.z - kp.z) > 30) continue;
+      if (!rec.alive && rec.deadT > 4) continue;
+      const vp = e.view.root.position;
+      plates.push({ id: 'cr:' + rec.id, kind: 'mob', name: rec.D.name, level: rec.level, hp: rec.alive ? rec.hp : 0, maxHp: rec.maxHp, x: vp.x, y: vp.y + rec.D.height + 0.45, z: vp.z,
+        selected: targetSel === 'cr:' + rec.id, hostile: !(rec.D.behavior.aggro <= 0 && !rec.target), dead: !rec.alive,
+        rank: rec.D.boss ? 'boss' : 'normal', aggro: rec.alive && !!rec.target });
+    }
+    plates.push({ id: 'me', kind: 'player', name: CLASS_INFO[H.cls].name, level: H.level, hp: H.hp, maxHp: H.maxHp, x: kp.x, y: 2.15, z: kp.z, selected: false, hostile: false, dead: H.hp <= 0 });
+    S.map = { region: zone ? zone.name : REGION.name, world: REGION.name, bounds: REGION.bounds, image: mapImage, player: { x: kp.x, z: kp.z, yaw: knight.root.rotation.y }, view: { x: view.x, z: view.z },
+      moveTo: moveTarget ? { x: moveTarget.x, z: moveTarget.z } : null,
+      markers: (dummy.g.visible ? [{ id: 'dummy', x: dummy.g.position.x, z: dummy.g.position.z, kind: 'neutral', selected: targetSel === 'dummy', label: DUMMY_INFO.name }] : [])
+        .concat(creatures ? creatures.markers(kp.x, kp.z, 60, targetSel) : []).concat(POI) };
+    S.stats = { mpRegen: H.mpRegen, hpRegen: 2, attackSpeed: knight.attackSpeed, attackSpeedBuff: H.buffs.eagle ? 0.4 : 0, damageMul: H.buffs.rage ? 1.3 : 1,
+      damageTaken: H.buffs.iron ? 0.4 : 1, critChance: 0.15, critMul: 1.75 };
+    hud.update(S);
+  }
+  // skill icons on the class cards
+  document.querySelectorAll('#select .card').forEach((c) => {
+    const L = SKILLS[c.dataset.cls]; if (!L) return;
+    const row = document.createElement('div'); row.className = 'sk';
+    row.innerHTML = L.map((s) => '<i title="' + s.name + '">' + iconSVG(s.icon, s.c[0], s.c[1]) + '</i>').join('');
+    c.appendChild(row);
+  });
+
+  /* ---------- class selection ---------- */
+  const selUI = document.getElementById('select'), enterBtn = document.getElementById('enter');
+  let chosen = null;
+  const selRings = {};
+  if (selecting) {
+    selUI.hidden = false;
+    controls.enabled = false; dummy.g.visible = false;
+    if (creatures) creatures.setVisible(false);                // creatures: not on the class selection screen
+    const SO = VW ? VW.spawn('plaza').position : new THREE.Vector3();   // village: the line-up stands on the plaza, the waystone and keep behind
+    [['warrior', -2.3, 0.22], ['archer', 0, 0], ['mage', 2.3, -0.22]].forEach(([k, x, r]) => { if (heroes[k]) { heroes[k].root.position.set(SO.x + x, 0, SO.z); heroes[k].root.rotation.y = r; } });
+    camera.position.set(SO.x, 1.95, SO.z + 8.2); controls.target.set(SO.x, 1.15, SO.z); camera.lookAt(SO.x, 1.15, SO.z);
+    for (const k in heroes) {
+      const r = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.86, 48), new THREE.MeshBasicMaterial({ color: 0xe3b540, transparent: true, opacity: 0, depthWrite: false }));
+      r.rotation.x = -Math.PI / 2; r.position.set(heroes[k].root.position.x, 0.02, heroes[k].root.position.z); scene.add(r); selRings[k] = r;
+    }
+    selUI.querySelectorAll('.card').forEach((c) => {
+      c.addEventListener('click', () => {
+        chosen = c.dataset.cls;
+        selUI.querySelectorAll('.card').forEach((x) => x.classList.toggle('on', x === c));
+        enterBtn.disabled = false;
+        const h = heroes[chosen];                               // signature move as a preview
+        h.revive(); h.sinceAttack = 99; h.attack();             // archer: shot, mage: fireball cast, warrior: first swing
+      });
+      c.addEventListener('dblclick', () => startGame(c.dataset.cls));
+    });
+    enterBtn.addEventListener('click', () => { if (chosen) startGame(chosen); });
+  }
+  if (!selecting) initHUD(knight.cls);                         // ?cls= skips the selection screen
+  function startGame(cls) {
+    selecting = false;
+    knight = heroes[cls]; window.__knight = knight;
+    for (const k in heroes) {
+      if (heroes[k] !== knight) { scene.remove(heroes[k].root); scene.remove(heroes[k].trail.mesh); scene.remove(heroes[k].slash.group); }
+      if (selRings[k]) scene.remove(selRings[k]);
+    }
+    knight.revive(); knight.action = null; knight.root.position.set(0, 0, 0);
+    if (MFX) MFX.attach(cls === 'mage' ? knight : null);           // magefx
+    yaw = Math.PI - 0.5; knight.root.rotation.y = yaw;
+    camera.position.set(...presets.iso.pos); controls.target.set(...presets.iso.tgt); controls.enabled = true;
+    if (VW) {                                                   // village: spawn on the plaza, south of the waystone, facing the keep
+      const sp = VW.spawn('plaza');
+      knight.root.position.copy(sp.position); yaw = sp.yaw; knight.root.rotation.y = yaw;
+      camera.position.add(sp.position); controls.target.add(sp.position);
+    }
+    controls.update();
+    selUI.remove(); dummy.g.visible = true;
+    if (creatures) creatures.setVisible(true);
+    initHUD(cls);
+    hud.setPerf({ tris: Math.round(knight.triangles) });
+  }
+
+  /* ---------- main loop ---------- */
+  const clock = new THREE.Clock();
+  let frames = 0, fpsT = 0;
+  const prev = new THREE.Vector3();
+  const dir = new THREE.Vector3();
+  const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+
+  function tick() {
+    requestAnimationFrame(tick);
+    const dt = Math.min(clock.getDelta(), 0.05);
+    if (selecting) {                                            // class selection: both heroes idle side by side
+      for (const k in heroes) {
+        heroes[k].update(dt, {});
+        const r = selRings[k]; if (r) r.material.opacity += ((chosen === k ? 0.85 : 0.18) - r.material.opacity) * (1 - Math.exp(-dt * 10));
+      }
+      updateFlares(dt); updateMagic(dt); if (MFX) MFX.update(dt); updateHUD(dt);   // magefx: class-select preview
+      sun.position.copy(SUN_OFF); sun.target.position.set(0, 0, 0);
+      if (VW) VW.update(dt, camera, VW.spawn('plaza').position, sun);
+      renderer.render(scene, camera);
+      frames++; fpsT += dt;
+      if (fpsT > 0.5) { hud.setPerf({ fps: Math.round(frames / fpsT) }); frames = 0; fpsT = 0; }
+      return;
+    }
+
+    // movement intent (camera-independent: W = -Z, which is "up" on screen)
+    dir.set(0, 0, 0);
+    if (keys['w'] || keys['arrowup']) dir.z -= 1;
+    if (keys['s'] || keys['arrowdown']) dir.z += 1;
+    if (keys['a'] || keys['arrowleft']) dir.x -= 1;
+    if (keys['d'] || keys['arrowright']) dir.x += 1;
+    { const mv = window.__mobile && window.__mobile.mv; if (mv) dir.set(mv.x, 0, mv.z); }   // mobile.js joystick: camera-relative world direction
+    let move = 0;
+    if (dir.lengthSq() > 0) { dir.normalize(); move = 1; engage = null; }   // keyboard movement cancels click-to-attack
+    else if (engage) {                                            // click-to-attack: close in, then strike
+      const T = engageTarget(engage.key);
+      if (!T) engage = null;
+      else if (engageGap(T) > ATTACK_RANGE[knight.cls]) {
+        if (knight.canMove) { dir.set(T.x - knight.root.position.x, 0, T.z - knight.root.position.z).normalize(); move = 1; }
+      } else if (engage.presses > 0 || mouseHeld) { if (!knight.dead) strikeAt(T); engage.presses = 0; }
+    } else if (moveTarget) {
+      const st = movePath ? VW.steer(movePath, knight.root.position) : moveTarget;   // village: follow the A* waypoints
+      if (st) dir.set(st.x - knight.root.position.x, 0, st.z - knight.root.position.z);
+      if (!st || (st === moveTarget && dir.length() < 0.15)) { moveTarget = null; movePath = null; } else { dir.normalize(); move = 1; }
+    }
+    if ((forced === 'run' || forced === 'walk') && move === 0) move = 1;
+
+    const a = knight.action;
+    const swinging = !!(a && a.def.attack);
+    const locked = !knight.canMove;
+    // ground speed ramps up / down (start -> walk -> run, stop -> run -> walk -> idle); the knight blends gaits by it
+    const wantSpeed = locked ? 0 : move * ((walkMode || forced === 'walk') ? Knight.WALK_SPEED : Knight.RUN_SPEED);
+    if (move > 0) lastDir.copy(dir);
+    curSpeed = locked ? 0 : curSpeed + Math.max(-14 * dt, Math.min(9 * dt, wantSpeed - curSpeed));
+    prev.copy(knight.root.position);
+    if (curSpeed > 0.01 && lastDir.lengthSq() > 0) {
+      knight.root.position.addScaledVector(lastDir, curSpeed * dt);
+      if (move > 0) yaw += angDiff(Math.atan2(dir.x, dir.z), yaw) * (1 - Math.exp(-14 * dt));
+    }
+    // ranged classes: face the aim point while drawing / charging (until the release)
+    if (a && a.def.ranged && a.t < a.def.impact - 0.02) {
+      const tgt = rangedAim || null;
+      if (tgt) {
+        const want = Math.atan2(tgt.x - knight.root.position.x, tgt.z - knight.root.position.z);
+        yaw += angDiff(want, yaw) * (1 - Math.exp(-16 * dt));
+      }
+    }
+    // soft auto-aim: while winding up a swing, turn toward the target if it is close and roughly in front
+    if (swinging && !a.def.ranged) {
+      const imp = Array.isArray(a.def.impact) ? a.def.impact[0] : a.def.impact;
+      if (a.t < imp - 0.02) {
+        let tx = dummy.g.position.x - knight.root.position.x, tz = dummy.g.position.z - knight.root.position.z;
+        const kp0 = knight.root.position, selA = creatures && creatures.byKey(targetSel);   // creatures: the selected one, else the closest in front
+        const ca = selA && selA.alive && Math.hypot(selA.x - kp0.x, selA.z - kp0.z) < 5.5 ? selA
+          : creatures && creatures.nearest(kp0.x, kp0.z, 3.5, (c) => Math.abs(angDiff(Math.atan2(c.x - kp0.x, c.z - kp0.z), yaw)) < 1.9);
+        if (ca && Math.hypot(ca.x - kp0.x, ca.z - kp0.z) < Math.hypot(tx, tz)) { tx = ca.x - kp0.x; tz = ca.z - kp0.z; }
+        if (Math.hypot(tx, tz) < 5.5) {
+          const want = Math.atan2(tx, tz);
+          if (Math.abs(angDiff(want, yaw)) < 1.9) yaw += angDiff(want, yaw) * (1 - Math.exp(-24 * dt));
+        }
+      }
+    }
+    knight.root.rotation.y = yaw;
+    knight.update(dt, { move: curSpeed > 0.05 ? 1 : 0, speed: curSpeed });
+    if (VW) VW.collide(knight.root.position);                     // village: buildings, walls, props, world boundary
+
+    // keep the knight out of the dummy
+    const ddx = knight.root.position.x - dummy.g.position.x, ddz = knight.root.position.z - dummy.g.position.z;
+    const dd = Math.hypot(ddx, ddz), minD = 1.05;
+    if (dd < minD && dd > 1e-4) { knight.root.position.x = dummy.g.position.x + ddx / dd * minD; knight.root.position.z = dummy.g.position.z + ddz / dd * minD; }
+    // creatures: step the authority (AI, attacks, hit windows) with the hero's position, then sync the rendered views
+    if (creatures) creatures.update(dt, { x: knight.root.position.x, z: knight.root.position.z, alive: !!hero && hero.hp > 0 && !knight.dead });
+
+    // time scale for world fx so they freeze together with the knight's hit-stop
+    timeScale = knight.hitStopT > 0 ? 0.04 : 1;
+    const wdt = dt * timeScale;
+
+    // dummy spring
+    dummy.om += (-70 * dummy.th - 5.5 * dummy.om) * wdt;
+    dummy.th += dummy.om * wdt;
+    dummy.piv.quaternion.setFromAxisAngle(dummy.axis, dummy.th);
+    dummy.flash = Math.max(0, dummy.flash - dt * 5);
+    for (const m of dummy.mats) { m.emissive.setRGB(dummy.flash * 0.5, dummy.flash * 0.4, dummy.flash * 0.25); }
+
+    // particles
+    for (const p of parts) {
+      if (p.life <= 0) continue;
+      p.life -= wdt;
+      if (p.life <= 0) { p.m.visible = false; continue; }
+      p.v.y += p.grav * wdt;
+      p.m.position.addScaledVector(p.v, wdt);
+      if (p.m.position.y < 0.03 && p.grav < 0) { p.m.position.y = 0.03; p.v.y *= -0.3; p.v.x *= 0.6; p.v.z *= 0.6; }
+      const u = 1 - p.life / p.max;
+      p.m.scale.setScalar(p.grow ? p.size * (1 + u * p.grow) : p.size * (1 - u * 0.85));
+      p.m.material.opacity = p.a * (1 - u);
+    }
+
+    updateFlares(dt);   // real time: the flare plays through the hit-stop
+    AV.update(dt);      // archer: arrows, trails, bow / buff / hop effects (vfx/archer.js)
+    IFX.update(dt); PFX.update(dt);   // impact: hit / kill feedback, EXP orbs, level-up (real time: Atherion's hit fx ignore the hit-stop)
+    updateMagic(dt);
+    if (MFX) MFX.update(dt);   // magefx: mage spells (after updateMagic, which resets the shared lights)
+    updateHUD(dt);
+
+    // pips fade
+    if (pipT > 0) { pipT -= dt; if (pipT <= 0) hud.combo(0); }
+    hud.tick(dt);
+
+    // camera follows the knight (MOBA style), keeping the user's orbit; shake + fov punch on top
+    const delta = knight.root.position.clone().sub(prev);
+    camera.position.sub(lastShake);
+    camera.position.add(delta); controls.target.add(delta);
+    controls.update();
+    shake *= Math.exp(-dt * 13); punch *= Math.exp(-dt * 9);
+    // local-player camera shake: random trauma + a short kick along the hit direction
+    shakeDir.multiplyScalar(Math.exp(-dt * 22));
+    lastShake.set((Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5)).multiplyScalar(shake * 0.8).add(shakeDir);
+    camera.position.add(lastShake);
+    const fov = 38 - punch * 2.2;
+    if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+
+    sun.position.copy(knight.root.position).add(SUN_OFF);
+    sun.target.position.copy(knight.root.position);
+    if (VW) { VW.updateTargets(wdt); VW.update(dt, camera, knight.root.position, sun); }   // village: dummies, roof fade, clutter LOD, shadow snapping
+    moveMark.update(dt, !!moveTarget);
+
+    renderer.render(scene, camera);
+    frames++; fpsT += dt;
+    if (fpsT > 0.5) { hud.setPerf({ fps: Math.round(frames / fpsT) }); frames = 0; fpsT = 0; }
+  }
+  tick();
+})();
+</script>
+<script src="mobile.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+/* TDS HUD parts by the integrator: bottom bar (ui/bottombar.js) and target card (ui/target.js). Sizes in Atherion px × --s. */
+.hb-root { position: absolute; left: 50%; bottom: calc(6px * var(--s)); width: calc(816px * var(--s)); height: calc(188px * var(--s));
+  transform: translateX(-50%); pointer-events: none; }
+.hb-cv, .tc-cv { position: absolute; left: 0; top: 0; display: block; pointer-events: none; }
+.hb-hits, .tc-fx { position: absolute; inset: 0; pointer-events: none; }
+.hb-hit { position: absolute; pointer-events: auto; }
+.hb-hit.hb-slot, .hb-hit.hb-knob { cursor: pointer; }
+.tc-root { position: absolute; left: 50%; top: calc(98px * var(--s)); width: calc(618px * var(--s)); height: calc(108px * var(--s));
+  transform: translateX(-50%); pointer-events: none; }
+.tc-fxhit { position: absolute; pointer-events: auto; }

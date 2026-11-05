@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>HUD bench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="../hud.css">
+</head>
+<body>
+<script src="paint.js"></script>
+<script src="minimap.js"></script>
+<script src="compass.js"></script>
+<script src="effects.js"></script>
+<script src="../hud.js"></script>
+<script src="bench.js"></script>
+<script>
+/* bench-map extras (SAMPLE data only):
+ *   ?quest=1   two quest markers (minimap diamonds pinned to the edge + compass diamonds)
+ *   ?fx=N      N sample buffs with descriptions (7+ shows the overflow strip)
+ *   ?more=1    extra markers: another player, a party member far outside the window, a neutral creature
+ *   ?noimg=1   no world image (vector backdrop fallback)
+ *   ?hover=1   minimap hovered (zoom glyphs + ×N)      ?wheel=n  n wheel steps (+ zoom in, − zoom out)
+ *   ?yaw=deg   fixed camera heading (compass)          ?tip=i    show the tooltip of effect row i
+ */
+(function () {
+  const q = new URLSearchParams(location.search), H = window.__hud, up = H.update;
+  const ic = (hue, glyph) => '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="h' + hue + '" cx="50%" cy="38%" r="78%"><stop offset="0" stop-color="hsl(' + hue + ',38%,34%)"/><stop offset="1" stop-color="hsl(' + hue + ',40%,10%)"/></radialGradient></defs>' +
+    '<rect width="64" height="64" fill="url(#h' + hue + ')"/><g fill="#E6DFCE" stroke="#14100C" stroke-width="1.6" paint-order="stroke">' + glyph + '</g></svg>';
+  const GL = ['<circle cx="32" cy="32" r="14"/>', '<path d="M14 46 L32 12 L50 46 Z"/>', '<rect x="18" y="18" width="28" height="28"/>', '<path d="M20 12 h24 l-6 40 h-12 Z"/>'];
+  const FX = [['rage', 'Savaş Narası', 12, 9.4, 'Hasar +%30'], ['iron', 'Demir Beden', 8, 4.2, 'Alınan hasar −%60'], ['eagle', 'Kartal Gözü', 10, 7.8, 'Saldırı hızı +%40'],
+    ['shield', 'Mana Kalkanı', 12, 11.2, '700 hasarı emer'], ['haste', 'Rüzgâr Adımı', 20, 15.5, 'Koşu hızı +%15'], ['regen', 'Şifa Duası', 30, 24.3, 'Saniyede 12 can'],
+    ['ward', 'Soğukkanlılık Otu', 90, 61, 'Mana maliyeti −%30'], ['luck', 'Uğur Boncuğu', 1800, 1458, 'Nadir ganimet ×1,5']];
+  const nfx = +q.get('fx') || 0, t0 = performance.now();
+  H.update = function (st) {
+    const t = (performance.now() - t0) / 1000;
+    if (nfx) st.player.buffs = FX.slice(0, nfx).map((f, i) => ({ id: f[0], name: f[1], dur: f[2], left: Math.max(0, f[3] - t), desc: f[4], iconHTML: ic([5, 45, 110, 220, 180, 140, 260, 30][i], GL[i % GL.length]) }));
+    if (st.map) {
+      if (q.get('noimg') === '1') delete st.map.image;
+      if (q.get('yaw') !== null) { const a = +q.get('yaw') * Math.PI / 180; st.map.view = { x: Math.sin(a), z: -Math.cos(a) }; }
+      if (q.get('quest') === '1') st.map.markers = st.map.markers.concat([{ id: 'q1', x: 70, z: -40, kind: 'quest', label: 'Görev' }, { id: 'q2', x: 44, z: 46, kind: 'quest', label: 'Görev' }]);
+      if (q.get('more') === '1') st.map.markers = st.map.markers.concat([{ id: 'o1', x: 30, z: 40, kind: 'friendly' }, { id: 'pm', x: -40, z: 80, kind: 'party' }, { id: 'c2', x: 52, z: 30, kind: 'neutral' }, { id: 'c3', x: 49, z: 44, kind: 'hostile' }, { id: 'c4', x: 43, z: 47, kind: 'hostile' }]);
+    }
+    up.call(H, st);
+  };
+  setTimeout(() => {
+    const hit = document.querySelector('.ath-mm-hit');
+    if (hit && q.get('hover') === '1') hit.dispatchEvent(new MouseEvent('mouseenter'));
+    const n = +q.get('wheel') || 0;
+    for (let i = 0; i < Math.abs(n); i++) hit.dispatchEvent(new WheelEvent('wheel', { deltaY: n > 0 ? -100 : 100, cancelable: true }));
+    if (q.get('tip') !== null) { const d = document.querySelectorAll('.ath-fx-hit')[+q.get('tip')]; if (d) d.dispatchEvent(new MouseEvent('mouseenter')); }
+  }, 600);
+})();
+</script>
+</body>
+</html>

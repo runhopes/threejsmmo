@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HUD Preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="hud.css">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #3f6f96; }
+  /* stand-in for the world: a bright and a dark half, to judge contrast over both */
+  #world { position: fixed; inset: 0; background: linear-gradient(100deg, #5a8fbf 0 48%, #1c2a33 52% 100%); }
+  #world::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 1px, transparent 1px 60px), repeating-linear-gradient(90deg, rgba(255,255,255,.05) 0 1px, transparent 1px 60px); }
+  #note { position: fixed; left: 50%; top: 44%; transform: translateX(-50%); z-index: 2; font: 500 12px 'Alegreya Sans', sans-serif; color: #DDD7C8; background: rgba(14,17,18,.8); padding: 4px 10px; border: 1px solid #454944; }
+</style>
+</head>
+<body>
+<div id="world"></div>
+<div id="note">HUD önizleme · örnek veriler (oyun verisi değil) · ?target=boss|elite|hostile|friendly|neutral|none</div>
+<script src="hud.js"></script>
+<script>
+/* Dev harness for hud.js: every component state with SAMPLE data (quests, party, target kinds, cooldowns...).
+ * The game itself only feeds real state; this page exists to review components the game does not drive yet. */
+(function () {
+  const q = new URLSearchParams(location.search);
+  const ic = (hue, glyph) => '<svg viewBox="0 0 64 64"><defs><radialGradient id="g' + hue + glyph.length + '" cx="50%" cy="38%" r="78%"><stop offset="0" stop-color="hsl(' + hue + ',28%,30%)"/><stop offset="1" stop-color="hsl(' + hue + ',30%,10%)"/></radialGradient></defs>' +
+    '<rect width="64" height="64" fill="url(#g' + hue + glyph.length + ')"/><g fill="#E6DFCE" stroke="#14100C" stroke-width="1.6" paint-order="stroke">' + glyph + '</g></svg>';
+  const G = ['<circle cx="32" cy="32" r="14"/>', '<path d="M14 46 L32 12 L50 46 Z"/>', '<rect x="18" y="18" width="28" height="28"/>', '<path d="M32 10 L38 28 L56 30 L42 41 L46 58 L32 48 L18 58 L22 41 L8 30 L26 28 Z"/>',
+    '<path d="M12 32 h40 M32 12 v40" stroke="#E6DFCE" stroke-width="6"/>', '<circle cx="24" cy="32" r="9"/><circle cx="42" cy="32" r="9"/>', '<path d="M20 12 h24 l-6 40 h-12 Z"/>', '<path d="M32 8 a24 24 0 1 0 1 0 Z M32 20 a12 12 0 1 1 -1 0 Z" fill-rule="evenodd"/>'];
+  const project = (x, y, z) => ({ x: x / 6, y: y / 4 - 0.25, z: 0 });
+  const hud = GameHUD.create({ project, onSkill: (i) => hud.pressed(i), onEscape: () => false, keys: [['W A S D', 'Hareket'], ['1 – 8', 'Yetenekler']] });
+  window.__hud = hud;
+  hud.setPlayerInfo({ name: 'Büyücü', title: 'Ateş Büyücüsü', emblemHTML: '<svg viewBox="0 0 64 64"><g fill="#BDA77F" stroke="#14100C" stroke-width="1.6"><path d="M22 60 L40 16" stroke="#BDA77F" stroke-width="4"/><circle cx="42" cy="13" r="8"/></g></svg>' });
+  const skills = ['Meteor', 'Alev Halkası', 'Buz Mızrağı', 'Yıldırım', 'Ateş Sütunu', 'Işınlanma', 'Mana Kalkanı', 'Ateş Fırtınası'].map((n, i) => ({ id: 's' + i, name: n, key: String(i + 1), alt: i === 0 ? 'Q' : '',
+    iconHTML: ic([18, 30, 200, 225, 15, 275, 220, 10][i], G[i]), mp: [45, 32, 22, 30, 36, 20, 30, 80][i], cd: [12, 8, 5, 7, 10, 8, 20, 30][i], desc: 'Örnek açıklama metni: yeteneğin ne yaptığını iki satırı geçmeyecek kadar kısa anlatır.' }));
+  hud.setSkills(skills, { id: 'basic', name: 'Ateş Topu', iconHTML: ic(20, G[0]), desc: 'Sol tık: örnek temel saldırı.' });
+  hud.show();
+  const t0 = performance.now();
+  const targets = {
+    hostile: { id: 'w1', name: 'Kurt Sürüsü Lideri', level: 12, type: 'Canavar', disposition: 'hostile', rank: 'normal' },
+    elite: { id: 'e1', name: 'Mezar Bekçisi', level: 15, type: 'Ölümsüz', disposition: 'hostile', rank: 'elite' },
+    boss: { id: 'b1', name: 'Kül Ejderi Varkas', level: 20, type: 'Ejderha', disposition: 'hostile', rank: 'boss' },
+    friendly: { id: 'f1', name: 'Demirci Arda', level: 30, type: 'Tüccar', disposition: 'friendly', rank: 'normal' },
+    neutral: { id: 'n1', name: 'Eğitim Kuklası', level: 1, type: 'Talim hedefi', disposition: 'neutral', rank: 'normal' },
+  };
+  const tk = q.get('target') || 'elite';
+  hud.setQuests([
+    { id: 'q1', title: 'Kurt sürüsünü dağıt', distance: 140, objectives: [{ text: 'Kurt öldür', cur: 6, max: 10 }, { text: 'Sürü liderini yen', cur: 0, max: 1 }] },
+    { id: 'q2', title: 'Demirciye cevher götür', objectives: [{ text: 'Demir cevheri topla', cur: 5, max: 5, done: true }, { text: 'Demirci Arda ile konuş' }] },
+    { id: 'q3', title: 'Eski kuleyi araştır', done: true, objectives: [{ text: 'Kuleye ulaş', done: true }] },
+  ]);
+  hud.setParty([
+    { id: 'p1', name: 'Kaan', level: 14, hp: 2900, maxHp: 3600 },
+    { id: 'p2', name: 'Elif', level: 13, hp: 600, maxHp: 2500 },
+    { id: 'p3', name: 'Mert', level: 12, hp: 0, maxHp: 2700, dead: true },
+  ]);
+  hud.logLine('system', 'Eğitim Alanı bölgesine girdin.', 'sys');
+  hud.logLine('system', 'Seviye 14 oldun. Can ve mana yenilendi.', 'lvl');
+  hud.logLine('system', 'Mana Kalkanı etkin (12 sn).', 'buff');
+  for (let i = 0; i < 6; i++) hud.logLine('combat', targets[tk === 'none' ? 'hostile' : tk].name + ' · ' + (200 + i * 37) + ' hasar' + (i === 2 ? ' · kritik' : ''), i === 2 ? 'crit' : 'dmg');
+  hud.setPerf({ fps: 60, tris: 43816 });
+  const cdStart = [5, 0, 1.6, 0, 0, 3.2, 0, 22];
+  let last = performance.now();
+  (function loop() {
+    const now = performance.now(), dt = (now - last) / 1000, t = (now - t0) / 1000; last = now;
+    const mp = 310;
+    hud.update({
+      player: { level: 14, hp: 1630, maxHp: 2300, mp, maxMp: 900, mpRegen: 18, absorb: 380, dead: false,
+        buffs: [{ id: 'shield', name: 'Mana Kalkanı', iconHTML: ic(220, G[6]), left: Math.max(0, 9.5 - t), dur: 12 }, { id: 'eagle', name: 'Kartal Gözü', iconHTML: ic(110, G[5]), left: Math.max(0, 2.6 - t), dur: 10 }] },
+      exp: { level: 14, exp: 9120, need: 14100 },
+      skills: skills.map((s, i) => ({ cd: Math.max(0, cdStart[i] - t), cdTotal: s.cd, usable: mp >= s.mp && i !== 4, active: i === 6, activeLeft: Math.max(0, 9.5 - t), activeDur: 12, casting: i === 2 && t < 0.6 })),
+      target: tk === 'none' ? null : Object.assign({ hp: tk === 'boss' ? 412000 : 2100, maxHp: tk === 'boss' ? 980000 : 5200,
+        effects: tk === 'friendly' || tk === 'neutral' ? [] : [{ id: 'burn', name: 'Yanma', iconHTML: ic(15, G[1]), left: 4.2, debuff: true }, { id: 'slow', name: 'Yavaşlama', iconHTML: ic(200, G[2]), left: 2.1, debuff: true }] }, targets[tk]),
+      map: { region: 'Kuzey Ormanı', player: { x: 0, z: 0, yaw: 0.6 }, view: { x: 0.3, z: -1 }, moveTo: { x: 6, z: -9 },
+        markers: [{ id: 'm1', x: 8, z: 4, kind: 'hostile', selected: true }, { id: 'm2', x: -10, z: -6, kind: 'npc' }, { id: 'm3', x: 4, z: -14, kind: 'quest' }, { id: 'm4', x: -5, z: 9, kind: 'party' }] },
+      stats: { mpRegen: 18, hpRegen: 2, attackSpeed: 1.08, damageMul: 1, damageTaken: 1, critChance: 0.15, critMul: 1.75 },
+    });
+    hud.tick(dt);
+    requestAnimationFrame(loop);
+  })();
+  setTimeout(() => { hud.combatText({ x: 1, y: 2, z: 0 }, '1.284', 'crit'); hud.combatText({ x: 1, y: 2, z: 0 }, '342', 'dmg'); hud.combatText({ x: -1.4, y: 1.4, z: 0 }, '-418', 'hurt');
+    hud.combatText({ x: 2.2, y: 1.6, z: 0 }, '42', 'poison'); hud.xpGain(1240); hud.error('Yetersiz mana'); hud.levelUp(15); }, 300);
+  setTimeout(() => { document.title = 'ready'; }, 900);
+})();
+</script>
+</body>
+</html>
