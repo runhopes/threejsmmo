@@ -109,8 +109,8 @@
     for (const n of names) {
       // no file:// fetch (Chrome blocks it) and no 404 noise: a failed clip is simply a silent clip
       // [mobile] the app's bundled files: the WebView's own fetch (CapacitorWebFetch when a native HTTP patch is installed)
-      (global.CapacitorWebFetch || global.fetch)(base + n + '.wav').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(0)))
-        .then((ab) => new Promise((res, rej) => Sfx._ctx.decodeAudioData(ab, res, rej)))
+      (global.CapacitorWebFetch || global.fetch)(base + n + '.wav').then((r) => (r.ok || r.status === 0 ? r.arrayBuffer() : Promise.reject('HTTP ' + r.status)))   // iOS app scheme (capacitor://) answers with status 0 although the body is there
+        .then((ab) => (ab && ab.byteLength ? new Promise((res, rej) => Sfx._ctx.decodeAudioData(ab, res, rej)) : Promise.reject('empty')))
         .then((buf) => { Sfx._bufs[n] = buf; }).catch((e) => { Sfx.lastError = n + ': ' + (e && (e.message || e.name) || e); }).then(done);
     }
   };
