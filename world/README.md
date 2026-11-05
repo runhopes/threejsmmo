@@ -32,6 +32,8 @@ channel and mud / scree reuse the road / trail textures.
 * Camps (`W.camps`) become `CREATURE_DEFS.ZONES` (`integrate.js: creatureZones`). Species ids come from `creatures/defs.js`,
   `creatures/variants.js` (tinted / scaled variants) and `creatures/species/*.js`. Camps get no trees inside their radius. No snow / desert species
   are used (the frost variants stay in the defs but no camp spawns them).
+* Gate / plaza apron: `layout.js` has 8 low-level camps (`rat_g`..`rab_j`, lv 1-4) flanking the gate road, the plaza and the south road at 40-130 m, so the first mobs stand right outside the village (creature views only exist within 75 m of the hero (`viewRadius` in index.html, AI 85 m), the camera shows ~20-40 m: before this the first 100 m outside the gate had no mobs at all). Keep the village band itself mob-free.
+* Open-field density: `W.SCATTER_CAMPS = 1000` random packs of 3-5 (28 m apart) on top of the authored camps = ~4500 mobs, mean ~11 mobs within 35 m of any floor point (none < 3). Dormant mobs cost only a distance check; mobs on/off made no measurable fps difference.
 * The starter area stays open: no trees on the great plaza, the gate road or the meadow ring round them (`calm` in `scenery.js`).
 * Fog hides everything past ~175 m, so `terrain.js` culls static / instanced chunks past 205 m (terrain + water 470 m).
   The minimap capture switches culling off once (`World.cullOff`).

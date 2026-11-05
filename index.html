@@ -303,7 +303,7 @@
      They join every hero's hitTargets as capsules (tg.creature set); damage on them goes through creatures.damage(). */
   const creatures = (debugAnim || q.has('nocreatures')) ? null : CreatureWorld.create({
     scene, camera, heroes, obstacles: [{ x: dummy.g.position.x, z: dummy.g.position.z, r: 0.55 }].concat(VW ? VW.creatureObstacles() : []), net: q.get('net'),
-    viewRadius: VW && VW.World ? 95 : undefined, activeRadius: VW && VW.World ? 105 : undefined,   // open world (~350 creatures): views + AI only near the hero
+    viewRadius: VW && VW.World ? 75 : undefined, activeRadius: VW && VW.World ? 85 : undefined,   // open world (~350 creatures): views + AI only near the hero
     collide: VW ? (p, r) => VW.collide(p, r) : null,              // creatures: same walls / fences / props as the hero   // ?net=loopback: server + latency
     zones: (VW ? VW.creatureZones : (z) => z)(CREATURE_DEFS.ZONES.filter((z) => CreatureKit.SPECIES[z.species])),   // village: camps re-sited south of the gate
   });

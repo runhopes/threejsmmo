@@ -235,6 +235,15 @@
   campM('rab_d', 'Derin İn', 'rabbit', 168, 50, 10, 6);
   campM('rab_e', 'Kök Yuvası', 'rabbit', 192, -34, 9, 5);
   campM('rab_king', 'Kral Yuvası', 'rabbit_king', 192, 20, 5, 1);
+  // --- castle gate + plaza apron (Metin2: the first mobs stand right outside the village; they are in view range, 95 m, of the gate and plaza) ---
+  campM('rat_g', 'Plaza Batısı', 'rat', -42, 153, 8, 5);
+  campM('rab_g', 'Plaza Doğusu', 'rabbit', 42, 153, 8, 5);
+  campM('rat_h', 'Batı Sur Dibi', 'rat', -130, 112, 9, 5);
+  campM('rab_h', 'Doğu Sur Dibi', 'rabbit', 130, 112, 9, 5);
+  campM('snk_g', 'Çiftlik Yolu', 'snake', -112, 172, 9, 4);
+  campM('rat_i', 'Doğu Otlağı', 'rat', 112, 178, 9, 5);
+  campM('rat_j', 'Güney Çayırı', 'rat', -30, 262, 8, 5);
+  campM('rab_j', 'Yol Kenarı', 'rabbit', 32, 262, 8, 5);
   // --- west forest (5-9) ---
   camp('boar_a', 'Orman Girişi', 'boar', 66, 268, 12, 5);
   camp('boar_b', 'Kütük Açıklığı', 'boar', 62, 322, 12, 5);
@@ -496,13 +505,13 @@
     marsh:    [['rat_swamp', 0.35], ['snake_marsh', 0.35], ['wolf_dark', 0.2], ['bear', 0.1]],
     shadow:   [['wolf_dark', 0.3], ['boar_black', 0.3], ['bear', 0.15], ['panther', 0.15], ['troll', 0.1]],
   };
-  W.SCATTER_CAMPS = 320;
+  W.SCATTER_CAMPS = 1000;                // ~1 mob per 200 m2 on the open floor: a 40 m camera view always shows a pack or two
   W.scatterCamps = function () {
     if (W.scattered) return; W.scattered = true;
     const R = V.rng(20261105), out = [];
     const sites = Object.values(W.sites);
     let tries = 0;
-    while (out.length < W.SCATTER_CAMPS && tries++ < 60000) {
+    while (out.length < W.SCATTER_CAMPS && tries++ < 200000) {
       const x = lerp(W.region.minX, W.region.maxX, R()), z = lerp(W.region.minZ, W.region.maxZ, R());
       const r = 9;
       if (W.sdAt(x, z) > -(r * 0.75 + 3)) continue;
@@ -511,11 +520,11 @@
       if (sites.some((p) => Math.hypot(p[0] - x, p[1] - z) < 28)) continue;
       if (W.bridges && W.bridges.some((b) => Math.hypot(b.x - x, b.z - z) < 20)) continue;
       if (W.camps.some((c) => Math.hypot(c.cx - x, c.cz - z) < c.r + 18)) continue;
-      if (out.some((c) => Math.hypot(c.cx - x, c.cz - z) < 42)) continue;
+      if (out.some((c) => Math.hypot(c.cx - x, c.cz - z) < 28)) continue;
       const zn = W.zoneAt(x, z); if (!zn) continue;
       const tab = zn.scatter || SCATTER[zn.biome]; if (!tab) continue;
       let u = R(), sp = tab[0][0]; for (const [id, p] of tab) { if (u < p) { sp = id; break; } u -= p; }
-      out.push({ id: 'rnd_' + out.length, name: zn.name, species: sp, cx: x, cz: z, r, count: 2 + Math.floor(R() * 3) });
+      out.push({ id: 'rnd_' + out.length, name: zn.name, species: sp, cx: x, cz: z, r, count: 3 + Math.floor(R() * 3) });
     }
     for (const c of out) W.camps.push(c);
     W.scatterCount = out.length;
