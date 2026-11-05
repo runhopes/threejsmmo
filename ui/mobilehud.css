@@ -186,3 +186,6 @@ html.mh-dead #m-joy, html.mh-dead #m-fire, html.mh-dead .mh-sk, html.mh-dead .mh
 html.mh-dead .mh-xp, html.mh-dead .mh-buffs, html.mh-dead .mh-tg, html.mh-dead .hud-chat { visibility: hidden !important; pointer-events: none !important; }
 /* typing: the chat plate rises to the top-left corner; the player block steps aside until the line is sent */
 html.is-mobile:has(.hud-chat.open) .mh-me, html.is-mobile:has(.hud-chat.open) .mh-buffs { visibility: hidden; }
+/* text notices of the fallback HUD (error / level-up): low on the screen, never over the hero */
+html.is-mobile .hud-err { top: auto !important; bottom: calc(var(--mh-b) + 40px); }
+html.is-mobile .hud-lvl { top: auto !important; bottom: calc(var(--mh-b) + 62px); }

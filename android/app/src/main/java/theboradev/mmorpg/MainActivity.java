@@ -1,6 +1,7 @@
 package theboradev.mmorpg;
 
 import android.os.Bundle;
+import android.webkit.WebView;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
@@ -11,6 +12,8 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // debug APKs are inspectable (chrome://inspect / CDP over adb) for on-device tests; release builds stay closed
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) WebView.setWebContentsDebuggingEnabled(true);
         hideSystemBars();
     }
 

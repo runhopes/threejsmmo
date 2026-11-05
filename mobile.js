@@ -13,7 +13,7 @@
 
   const css = document.createElement('style');
   css.textContent = [
-    'html.is-mobile, html.is-mobile body { overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }',
+    'html.is-mobile, html.is-mobile body, html.is-mobile #at-screen { touch-action: none; } html.is-mobile, html.is-mobile body { overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }',
     '#m-joy { position: fixed; left: 18px; bottom: 18px; width: 132px; height: 132px; border-radius: 50%; background: rgba(20,24,30,.38); border: 2px solid rgba(220,200,150,.45); z-index: 60; touch-action: none; }',
     '#m-joy i { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; background: rgba(230,205,140,.55); border: 2px solid rgba(255,235,180,.7); }',
     '#m-fire { position: fixed; right: 26px; bottom: 96px; width: 104px; height: 104px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, rgba(190,60,48,.85), rgba(110,24,20,.85)); border: 3px solid rgba(250,225,160,.75); z-index: 60; touch-action: none; display: flex; align-items: center; justify-content: center; box-shadow: 0 3px 14px rgba(0,0,0,.5); }',
@@ -131,6 +131,14 @@
   };
   window.addEventListener('pointerup', end, true); window.addEventListener('pointercancel', end, true);
   document.addEventListener('contextmenu', (e) => e.preventDefault());
+  // browsers (iOS Safari ignores user-scalable=no): no double-tap zoom, no pinch zoom of the page — fingers belong to the game.
+  // Text fields keep their normal behaviour (caret placement, selection).
+  const typing = (t) => t && t.closest && t.closest('input, textarea, [contenteditable]');
+  let lastTap = 0;
+  document.addEventListener('touchend', (e) => { const now = Date.now(); if (now - lastTap < 320 && !typing(e.target) && e.cancelable) e.preventDefault(); lastTap = now; }, { passive: false });
+  document.addEventListener('dblclick', (e) => { if (!typing(e.target)) e.preventDefault(); }, { passive: false });
+  ['gesturestart', 'gesturechange'].forEach((t) => document.addEventListener(t, (e) => e.preventDefault(), { passive: false }));
+  document.addEventListener('touchmove', (e) => { if (e.touches && e.touches.length > 1 && e.cancelable) e.preventDefault(); }, { passive: false });
 
   // ---- fire button (right side): hold = keep attacking ----
   const fire = document.createElement('div'); fire.id = 'm-fire'; fire.innerHTML = '<svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="#fbe9b4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 3.5 20.5 3.5 20.5 9.5 10 20 7 17Z"/><path d="M6 14 10 18"/><path d="M3.5 20.5 7 17"/></svg>'; document.body.appendChild(fire);

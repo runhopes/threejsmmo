@@ -351,7 +351,9 @@
       bsurf.resize(s, cw + padX * 2, th + padY * 2);
       // bottom edge of the content box fixed 246 px above the screen bottom, centred
       bsurf.el.style.left = 'calc(50% - ' + ((cw * 0.5 + padX) * s).toFixed(1) + 'px)';
-      bsurf.el.style.bottom = ((BN.BOTTOM - padY) * s).toFixed(1) + 'px';
+      // [mobile HUD] phones: the centre of a short landscape screen is the hero — the banner sits just above the EXP groove instead
+      const bnBottom = global.document.documentElement.classList.contains('is-mobile') ? 46 : BN.BOTTOM;
+      bsurf.el.style.bottom = ((bnBottom - padY) * s).toFixed(1) + 'px';
     }
     function ellipseGrad(cx, cy, rw, rh, stops) {
       bg.save(); bg.translate(cx, cy); bg.scale(rw * 0.5, rh * 0.5);

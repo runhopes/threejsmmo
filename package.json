@@ -8,7 +8,7 @@
     "server": "node server/src/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "build:www": "node scripts/build-www.mjs",
-    "cap:sync": "npm run build:www && npx cap sync",
+    "cap:sync": "npm run build:www && npx cap sync && node scripts/clean-icloud.mjs",
     "ios": "npm run cap:sync && npx cap open ios",
     "android": "npm run cap:sync && npx cap open android"
   },
