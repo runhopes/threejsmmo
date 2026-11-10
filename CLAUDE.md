@@ -1,7 +1,27 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # tdsmoba — project rules (MANDATORY)
 
 Persistent fantasy MMORPG (three.js r128, procedural models, no build step). Details live in the folder READMEs
 (`village/README.md`, `world/README.md`, `creatures/`, `ui/`) and in the auto-memory notes.
+
+## Commands
+
+- `npm start` — Node ≥ 22.5 server (`server/src/index.js`: Express + WS + built-in `node:sqlite`, no deps). Serves the project root as the game on `http://localhost:3000`, `/health`, `ws://…/ws`. DB lands in `server/data/` (gitignored). See `server/README.md` (Turkish) for REST/WS protocol.
+- The game also runs without the server: open `index.html` directly (query flags: `?cls=warrior|mage|archer&spawn=plaza|z_hills&world=arena&wild=0&atmo=0&giants=<k>&net=…`).
+- `npm run build:www` — copies the explicit `FILES`/`DIRS` lists in `scripts/build-www.mjs` into `www/` (Capacitor webDir). **A new top-level game file or dir must be added to those lists** or it will be missing from the mobile apps. `npm run cap:sync | ios | android` build on top of it.
+- There is no lint and no unit-test suite (`npm test` is a stub). Verification = Playwright scripts in `tools/` (`playwright-core`, launched with `channel: 'msedge'` — adjust the channel on macOS). Common ones: `node tools/smoke.mjs [waitMs]` (all pages, reports pageerrors), `node tools/worldcheck.mjs` (layout data sanity), `node tools/worldplay.mjs <outDir>` (reachability), `node tools/atmoshot.mjs <outDir> <spots>` (real-game screenshots), `node tools/<x>play.mjs` / `*shot.mjs` per feature (hero, creatures, hud, mfx). Output goes to `shots/` (gitignored). Run a single check by running that one script.
+- `node tools/packvtex.mjs <srcDir>` rebuilds `village/phtex.js` (Poly Haven ground textures); `node tools/mapart.mjs <dir>` renders the sketch map.
+
+## Architecture (big picture)
+
+- **No bundler, no modules.** `index.html` loads ~60 classic `<script>` tags in a fixed order (three.js r128 from `vendor/` → `perf.js`, `textures.js`, `locomotion.js`, `heromodel.js`, `knight.js` → `audio/sfx.js` → `ui/*.js` → `hud.js` → `creatures/*` → `village/*` → `world/*` → `app/*`, `mobile.js`). Modules attach themselves to `window` (e.g. `Village`, `World`, `Forest`, `Atmosphere`, `AtherionConfig`); order matters, and the big gameplay loop (hero movement, camera, combat, `fY`) lives inline in `index.html` (155 KB). Other pages (`village.html`, `magefx.html`, `archer-vfx.html`, `creatures.html`, `preview.html`, `ui/bench-*.html`) are dev harnesses reusing the same modules.
+- **Layers:** `village/` = the castle village + shared scene machinery (instancer, materials, forest, atmosphere, `scene.js` collide/world-shift). `world/` = data-driven open world on top of it (`layout.js` data → `terrain.js` mesh/shader → `nav.js` navgrid/collision → `scenery.js` placement); `village/integrate.js` wires them. `creatures/` = species defs/AI sim (`sim.js`), views, variants; camps from `World.camps` become creature zones. `ui/` + `hud.js` = DOM/canvas HUD; `mobile.js`/`ui/mobilehud.*` = touch layer. `vfx/`, `magefx/` = skill effects. `audio/` = clip mixer.
+- **Client ↔ server:** `app/config.js` picks API/WS base (same origin on web; `https://mmorpg.thebora.dev` inside Capacitor; override with `?api=` or `localStorage.tdsm_api`). `app/net.js` (WS, remote players), `app/api.js`, `app/screens.js` (login/register/character select). `creatures/net.js` syncs creatures. Server is MVC (routes → controllers → services → models → `db/`), realtime in `server/src/net/`.
+- **Mobile:** Capacitor 8 wraps `www/` (`ios/`, `android/`; app id `theboradev.mmorpg`). `scripts/clean-icloud.mjs` removes iCloud conflict copies (`name 2.ext`) — the repo lives on iCloud, don't commit such files.
+- Folder READMEs (`world/`, `village/`, `server/`, `audio/`) hold the detailed rules; read the relevant one before changing that area.
 
 ## World look: "WoW Forever" mystic atmosphere — DO NOT REGRESS (zorunlu)
 
